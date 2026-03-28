@@ -1,0 +1,144 @@
+/* src/components/Onboarding.css */
+
+.ob-container {
+  min-height: 100vh;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  background-color: #030712;
+  color: #f3f4f6;
+  font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
+  padding: 1.5rem;
+}
+
+.ob-card {
+  background-color: #111827;
+  width: 100%;
+  max-width: 650px;
+  padding: 2.5rem;
+  border-radius: 1rem;
+  border: 1px solid #1f2937;
+  box-shadow: 0 10px 30px rgba(0, 0, 0, 0.5);
+}
+
+.ob-header {
+  text-align: center;
+  margin-bottom: 2rem;
+}
+
+.ob-title {
+  font-size: 1.75rem;
+  font-weight: 800;
+  margin-bottom: 0.5rem;
+}
+
+.ob-subtitle {
+  color: #9ca3af;
+  font-size: 1rem;
+}
+
+/* Base Stats Inputs */
+.ob-stats-grid {
+  display: flex;
+  flex-direction: column;
+  gap: 1.5rem;
+  margin-bottom: 2rem;
+}
+
+.ob-input-group {
+  display: flex;
+  flex-direction: column;
+  gap: 0.5rem;
+}
+
+.ob-label {
+  font-size: 0.95rem;
+  font-weight: 600;
+  color: #d1d5db;
+}
+
+.ob-input {
+  background-color: #030712;
+  border: 1px solid #374151;
+  color: #f3f4f6;
+  padding: 1rem;
+  border-radius: 0.5rem;
+  font-size: 1.1rem;
+  outline: none;
+  transition: border-color 0.2s;
+}
+
+.ob-input:focus {
+  border-color: #10b981;
+}
+
+/* Quiz Options */
+.ob-options {
+  display: flex;
+  flex-direction: column;
+  gap: 1rem;
+  margin-bottom: 2rem;
+}
+
+.ob-option-btn {
+  background-color: #030712;
+  border: 1px solid #374151;
+  color: #d1d5db;
+  padding: 1.25rem;
+  border-radius: 0.75rem;
+  font-size: 1rem;
+  text-align: left;
+  cursor: pointer;
+  transition: all 0.2s ease;
+}
+
+.ob-option-btn:hover {
+  border-color: #10b981;
+  background-color: rgba(16, 185, 129, 0.05);
+}
+
+.ob-option-btn.selected {
+  border-color: #10b981;
+  background-color: rgba(16, 185, 129, 0.1);
+  color: #10b981;
+  font-weight: 600;
+}
+
+.ob-btn-primary {
+  background-color: #10b981;
+  color: #030712;
+  font-weight: 700;
+  padding: 1rem 2rem;
+  border: none;
+  border-radius: 0.5rem;
+  cursor: pointer;
+  width: 100%;
+  font-size: 1.1rem;
+  transition: all 0.2s ease;
+}
+
+.ob-btn-primary:hover:not(:disabled) {
+  background-color: #34d399;
+}
+
+.ob-btn-primary:disabled {
+  background-color: #374151;
+  color: #6b7280;
+  cursor: not-allowed;
+}
+
+/* Progress Bar */
+.ob-progress-bar {
+  width: 100%;
+  height: 6px;
+  background-color: #374151;
+  border-radius: 3px;
+  margin-bottom: 2rem;
+  overflow: hidden;
+}
+
+.ob-progress-fill {
+  height: 100%;
+  background-color: #10b981;
+  transition: width 0.3s ease;
+}
