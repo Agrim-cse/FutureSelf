@@ -1,6 +1,8 @@
 import React, { useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 import './Onboarding.css';
+import { doc, setDoc } from 'firebase/firestore';
+import { db, auth } from '../firebase'; // <-- NEW: Added auth import
 
 const Onboarding = () => {
   const navigate = useNavigate();
@@ -163,19 +165,15 @@ const Onboarding = () => {
 
   // --- LOGIC HANDLERS ---
   
-  // Validation Check before letting them proceed
   const isProfileComplete = () => {
     if (!profile.name || !profile.age || !profile.status || !profile.income || !profile.savings) return false;
-    
-    // Check specific required fields based on status
     if (profile.status === 'non-earning' && (!profile.academicYear || !profile.gradYear)) return false;
     if (profile.status === 'earning' && !profile.retireAge) return false;
-    
     return true;
   };
 
   const handleProfileSubmit = () => {
-    setPhase(1); // Start Quiz
+    setPhase(1); 
   };
 
   const handleAnswer = (selectedTrait) => {
@@ -257,13 +255,69 @@ const Onboarding = () => {
     setPhase(2); 
   };
 
-  const finishOnboarding = () => {
-    localStorage.setItem('finquest_user', JSON.stringify({ profile, archetype }));
+  // --- NEW: FULLY AUTHENTICATED FIREBASE PUSH ---
+  const finishOnboarding = async () => {
+    // 1. Get current Authenticated User
+    const user = auth.currentUser;
+    // Fallback ID just in case they refreshed the page before Firebase Auth fully loaded
+    const secureId = user ? user.uid : profile.name.replace(/\s+/g, '_'); 
+    const actualEmail = user ? user.email : "guest@finquest.app";
+
+    const actualSavings = Number(profile.savings) || 0;
     
-    if (profile.status === 'non-earning') {
-      navigate('/student-dashboard', { state: { profile, archetype } });
+    // 2. Build the core profile object
+    const userData = {
+      uid: secureId,
+      email: actualEmail,
+      profile, 
+      archetype,
+      xp: 0,
+      streak: 1,
+      lastActive: new Date().toDateString(),
+      completedQuests: [],
+      claimedAchievements: []
+    };
+
+    // 3. Build a REALISTIC starting database based on their actual inputs
+    let realisticDbState = {};
+    if (profile.status === 'earning') {
+      realisticDbState = {
+        expenses: { housing: 0, food: 0, lifestyle: 0, health: 0 },
+        portfolio: { equity: actualSavings * 0.6, debt: actualSavings * 0.3, gold: actualSavings * 0.1 },
+        liabilities: [],
+        ledger: []
+      };
     } else {
-      navigate('/pro-dashboard', { state: { profile, archetype } });
+      realisticDbState = {
+        currentPeriodData: { essentials: 0, lifestyle: 0, academic: 0, save: 0 },
+        loans: [],
+        ledger: [],
+        manualStashAdj: 0
+      };
+    }
+
+    // 4. Save to Local Storage (keeps app lightning fast)
+    localStorage.setItem('finquest_user', JSON.stringify(userData));
+    const dbKey = profile.status === 'earning' ? `db_${profile.name}` : `db_student_${profile.name}`;
+    localStorage.setItem(dbKey, JSON.stringify(realisticDbState));
+
+    // 5. Secure Cloud Backup to Firebase using their UID
+    try {
+      await setDoc(doc(db, "users", secureId), {
+        ...userData,
+        dashboardData: realisticDbState,
+        createdAt: new Date().toISOString()
+      });
+      console.log("Secure Profile & DB successfully pushed to Firebase!");
+    } catch (e) {
+      console.error("Error saving to Firebase: ", e);
+    }
+    
+    // 6. Navigate
+    if (profile.status === 'non-earning') {
+      navigate('/student-dashboard', { state: userData });
+    } else {
+      navigate('/pro-dashboard', { state: userData });
     }
   };
   

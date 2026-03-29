@@ -3,6 +3,9 @@ import { useLocation, useNavigate } from 'react-router-dom';
 import { Line, Bar, Doughnut } from 'react-chartjs-2';
 import { Chart as ChartJS, CategoryScale, LinearScale, PointElement, LineElement, BarElement, ArcElement, Title, Tooltip, Filler, Legend } from 'chart.js';
 import Navbar from './Navbar';
+// SURGICAL DATABASE IMPORTS
+import { doc, setDoc } from 'firebase/firestore';
+import { db, auth } from '../firebase';
 import './Dashboard.css';
 
 ChartJS.register(CategoryScale, LinearScale, PointElement, LineElement, BarElement, ArcElement, Title, Tooltip, Filler, Legend);
@@ -20,28 +23,61 @@ const ProDashboard = () => {
   const [category, setCategory] = useState('housing'); 
   const [assetClass, setAssetClass] = useState('equity'); 
   const [expenses, setExpenses] = useState({ housing: 0, food: 0, lifestyle: 0, health: 0 });
-  const [portfolio, setPortfolio] = useState({ equity: 1500000, debt: 500000, gold: 200000 }); 
+  
+  // Initializing with realistic values from Onboarding instead of hardcoded 15L
+  const [portfolio, setPortfolio] = useState({ equity: 0, debt: 0, gold: 0 }); 
 
-  const [liabilities, setLiabilities] = useState([
-    { id: 1, name: 'Car Loan', principal: 800000, interest: 10, emi: 25000 }
-  ]);
+  const [liabilities, setLiabilities] = useState([]);
   const [newLib, setNewLib] = useState({ name: '', principal: '', interest: '', emi: '' });
 
   const [crisisLoss, setCrisisLoss] = useState('');
   const [crisisAlert, setCrisisAlert] = useState(null);
 
-  // --- NEW: WHAT-IF TIME MACHINE STATE ---
   const [whatIfExtra, setWhatIfExtra] = useState(0);
 
+  // 1. DATA INITIALIZATION HOOK
   useEffect(() => {
     const data = location.state || JSON.parse(localStorage.getItem('finquest_user'));
     if (!data || data.profile.status !== 'earning') {
-      navigate('/onboarding');
+      navigate('/auth');
     } else {
       setUserData(data);
       setXp(data.xp || 0);
+      
+      // Load saved state from LocalStorage
+      const savedDb = JSON.parse(localStorage.getItem(`db_${data.profile.name}`));
+      if (savedDb) {
+        setExpenses(savedDb.expenses || { housing: 0, food: 0, lifestyle: 0, health: 0 });
+        setPortfolio(savedDb.portfolio || { equity: 0, debt: 0, gold: 0 });
+        setLiabilities(savedDb.liabilities || []);
+      } else if (data.dashboardData) {
+        // Fallback to the initial realistic state created during Onboarding
+        setPortfolio(data.dashboardData.portfolio);
+        setExpenses(data.dashboardData.expenses);
+      }
     }
+    // eslint-disable-next-line
   }, [location, navigate]);
+
+  // 2. SURGICAL CLOUD SYNC HOOK
+  useEffect(() => {
+    const syncToCloud = async () => {
+      const user = auth.currentUser;
+      if (user && userData) {
+        const dbState = { expenses, portfolio, liabilities };
+        
+        // Update Local Storage for speed
+        localStorage.setItem(`db_${userData.profile.name}`, JSON.stringify(dbState));
+        
+        // Silent Cloud Backup
+        await setDoc(doc(db, "users", user.uid), {
+          dashboardData: dbState,
+          lastUpdated: new Date().toISOString()
+        }, { merge: true }).catch(err => console.error("Cloud Sync Error:", err));
+      }
+    };
+    syncToCloud();
+  }, [expenses, portfolio, liabilities, userData]);
 
   if (!userData) return <div className="dash-container">Loading Pro Engine...</div>;
 
@@ -50,12 +86,10 @@ const ProDashboard = () => {
   const yearsToRetire = Math.max(1, Number(profile.retireAge) - Number(profile.age));
   const totalEmi = liabilities.reduce((sum, lib) => sum + Number(lib.emi), 0);
 
-  // --- NEW: REALITY CHECK ROASTER LOGIC ---
   const totalSpentNeeds = expenses.housing + expenses.food + expenses.health + totalEmi;
   const totalSpentWants = expenses.lifestyle;
   const idealNeeds = income * 0.50;
   const idealWants = income * 0.30;
-  const idealInvest = income * 0.20;
 
   const getRealityCheck = () => {
     if (totalSpentNeeds > idealNeeds) return { text: "Bro, your 'Survival' spending is through the roof. Are you eating gold for breakfast? Cut back.", color: '#ef4444' };
@@ -137,7 +171,6 @@ const ProDashboard = () => {
     let labels = []; let predicted = []; let whatIfData = [];
     let runEq = portfolio.equity; let runDebt = portfolio.debt; let runGold = portfolio.gold;
     
-    // What if trajectory variables
     let runWhatIfEq = portfolio.equity; 
     let runWhatIfDebt = portfolio.debt; 
     let runWhatIfGold = portfolio.gold;
@@ -146,14 +179,11 @@ const ProDashboard = () => {
 
     for (let i = 0; i <= yearsToRetire; i++) {
       labels.push(`Age ${Number(profile.age) + i}`);
-      
-      // Standard Trajectory
       predicted.push((runEq + runDebt + runGold).toFixed(0));
       runEq = (runEq + (baseInvest * 0.6 * 12)) * 1.12;       
       runDebt = (runDebt + (baseInvest * 0.3 * 12)) * 1.07; 
       runGold = (runGold + (baseInvest * 0.1 * 12)) * 1.09; 
 
-      // What-If Trajectory (Adding extra investment to Equity at 12%)
       if (whatIfExtra > 0) {
         whatIfData.push((runWhatIfEq + runWhatIfDebt + runWhatIfGold).toFixed(0));
         runWhatIfEq = (runWhatIfEq + ((baseInvest * 0.6) + Number(whatIfExtra)) * 12) * 1.12;
@@ -164,7 +194,6 @@ const ProDashboard = () => {
 
     const datasets = [{ label: 'Predicted Net Worth', data: predicted, borderColor: '#8b5cf6', backgroundColor: 'rgba(139, 92, 246, 0.1)', fill: true, tension: 0.4 }];
     
-    // Only show the third line if they use the slider
     if (whatIfExtra > 0) {
       datasets.push({ label: `What-If (+₹${whatIfExtra}/mo)`, data: whatIfData, borderColor: '#10b981', borderDash: [5, 5], fill: false, tension: 0.4 });
     }
@@ -206,8 +235,6 @@ const ProDashboard = () => {
           {activeTab === 'actions' && (
             <>
               <div className="dash-col" style={{ animation: 'fadeIn 0.3s' }}>
-                
-                {/* NEW: THE AI REALITY CHECK ROASTER */}
                 <div style={{ backgroundColor: 'rgba(17, 24, 39, 0.8)', padding: '1rem', borderRadius: '0.75rem', border: `1px solid ${realityCheck.color}`, borderLeft: `5px solid ${realityCheck.color}`, marginBottom: '1rem' }}>
                   <span style={{ fontWeight: 'bold', color: realityCheck.color, fontSize: '0.85rem', textTransform: 'uppercase' }}>AI Coach Reality Check:</span>
                   <p style={{ color: '#d1d5db', fontSize: '0.95rem', marginTop: '0.25rem' }}>{realityCheck.text}</p>
@@ -315,11 +342,10 @@ const ProDashboard = () => {
                   
                   <div style={{ height: '230px' }}><Line data={getCorpusData()} options={{ responsive: true, maintainAspectRatio: false }} /></div>
 
-                  {/* NEW: THE WHAT-IF TIME MACHINE SLIDER */}
                   <div style={{ marginTop: '1.5rem', paddingTop: '1.5rem', borderTop: '1px dashed #374151' }}>
                     <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: '0.5rem' }}>
                       <span style={{ fontSize: '0.9rem', color: '#10b981', fontWeight: 'bold' }}>🦋 The "What-If" Time Machine</span>
-                      <span style={{ fontSize: '0.9rem', color: '#d1d5db' }}>+ ₹{whatIfExtra.toLocaleString()}/mo</span>
+                      <span style={{ fontSize: '0.9rem', color: '#d1d5db' }}>+ ₹{Number(whatIfExtra).toLocaleString()}/mo</span>
                     </div>
                     <p style={{ fontSize: '0.75rem', color: '#9ca3af', marginBottom: '0.5rem' }}>Slide to see the impact of cutting "Wants" and investing the difference.</p>
                     <input 
@@ -328,7 +354,6 @@ const ProDashboard = () => {
                       style={{ width: '100%', accentColor: '#10b981' }}
                     />
                   </div>
-
                 </div>
               </div>
             </>

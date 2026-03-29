@@ -2,7 +2,10 @@ import React, { useEffect, useState } from 'react';
 import { useLocation, useNavigate } from 'react-router-dom';
 import { Line, Bar } from 'react-chartjs-2';
 import { Chart as ChartJS, CategoryScale, LinearScale, PointElement, LineElement, BarElement, Title, Tooltip, Filler, Legend } from 'chart.js';
-import Navbar from './Navbar'; // <-- IMPORTED NAVBAR
+import Navbar from './Navbar'; 
+// --- SURGICAL DATABASE IMPORTS ---
+import { doc, setDoc } from 'firebase/firestore';
+import { db, auth } from '../firebase';
 import './Dashboard.css';
 
 ChartJS.register(CategoryScale, LinearScale, PointElement, LineElement, BarElement, Title, Tooltip, Filler, Legend);
@@ -14,7 +17,7 @@ const StudentDashboard = () => {
 
   // --- UI TABS & GAMIFICATION ---
   const [activeTab, setActiveTab] = useState('actions');
-  const [xp, setXp] = useState(0); // Starts at 0, loaded from DB
+  const [xp, setXp] = useState(0); 
   const [timeFilter, setTimeFilter] = useState('7days'); 
 
   // --- LOGGING STATE ---
@@ -31,15 +34,49 @@ const StudentDashboard = () => {
   const [totalCrisisApplied, setTotalCrisisApplied] = useState(0);
   const [crisisAlert, setCrisisAlert] = useState(null);
 
+  // 1. DATA INITIALIZATION HOOK
   useEffect(() => {
     const data = location.state || JSON.parse(localStorage.getItem('finquest_user'));
     if (!data || data.profile.status !== 'non-earning') {
-      navigate('/onboarding');
+      navigate('/auth'); // Updated to /auth for safety
     } else {
       setUserData(data);
-      setXp(data.xp || 0); // Load their XP
+      setXp(data.xp || 0); 
+
+      // Load specific student DB state if it exists
+      const savedDb = JSON.parse(localStorage.getItem(`db_student_${data.profile.name}`));
+      if (savedDb) {
+        setCurrentPeriodData(savedDb.currentPeriodData || { essentials: 0, lifestyle: 0, academic: 0, save: 0 });
+        setLoans(savedDb.loans || []);
+        setTotalCrisisApplied(savedDb.totalCrisisApplied || 0);
+      } else if (data.dashboardData) {
+        // Fallback to Firestore initial state
+        setCurrentPeriodData(data.dashboardData.currentPeriodData);
+        setLoans(data.dashboardData.loans || []);
+      }
     }
+    // eslint-disable-next-line
   }, [location, navigate]);
+
+  // 2. SURGICAL CLOUD SYNC HOOK (Correctly placed inside component)
+  useEffect(() => {
+    const syncToCloud = async () => {
+      const user = auth.currentUser;
+      if (user && userData) {
+        const dbState = { currentPeriodData, loans, totalCrisisApplied };
+        
+        // Sync to LocalStorage for speed
+        localStorage.setItem(`db_student_${userData.profile.name}`, JSON.stringify(dbState));
+        
+        // Sync to Cloud Firestore
+        await setDoc(doc(db, "users", user.uid), {
+          dashboardData: dbState,
+          lastUpdated: new Date().toISOString()
+        }, { merge: true }).catch(err => console.error("Cloud Sync Error:", err));
+      }
+    };
+    syncToCloud();
+  }, [currentPeriodData, loans, totalCrisisApplied, userData]);
 
   const calculateEMI = (p, r, t) => {
     if (!p || !r || !t) return 0;
@@ -68,7 +105,6 @@ const StudentDashboard = () => {
     
     setCurrentPeriodData(prev => ({ ...prev, [category]: prev[category] + val }));
     
-    // XP REWARD SYSTEM
     if (category === 'save') {
       const newXp = xp + 50;
       setXp(newXp);
@@ -154,7 +190,6 @@ const StudentDashboard = () => {
     };
   };
 
-  // --- EXACT PLACEMENT OF NAVBAR ---
   return (
     <>
       <Navbar /> 
