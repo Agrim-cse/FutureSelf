@@ -76,7 +76,7 @@ const AuthPage = () => {
       <div style={{ minHeight: '90vh', backgroundColor: '#030712', display: 'flex', alignItems: 'center', justifyContent: 'center', fontFamily: 'sans-serif', padding: '1rem' }}>
         <div style={{ maxWidth: '400px', width: '100%', backgroundColor: '#111827', padding: '2.5rem', borderRadius: '1rem', border: '1px solid #374151', textAlign: 'center' }}>
           <h1 style={{ fontSize: '2rem', fontWeight: 'bold', color: '#f3f4f6', marginBottom: '0.5rem' }}>
-            Fin<span style={{ color: '#8b5cf6' }}>Quest</span>
+            Fin<span style={{ color: '#10b981' }}>Quest</span>
           </h1>
           <p style={{ color: '#9ca3af', marginBottom: '2rem' }}>{isLogin ? 'Welcome back, Commander.' : 'Create your secure account.'}</p>
 
@@ -123,14 +123,14 @@ const AuthPage = () => {
               </div>
             )}
 
-            <button type="submit" disabled={loading} style={{ padding: '1rem', backgroundColor: '#8b5cf6', color: '#fff', border: 'none', borderRadius: '0.5rem', fontWeight: 'bold', cursor: loading ? 'not-allowed' : 'pointer', marginTop: '0.5rem', transition: '0.2s' }}>
+            <button type="submit" disabled={loading} style={{ padding: '1rem', backgroundColor: '#10b981', color: '#fff', border: 'none', borderRadius: '0.5rem', fontWeight: 'bold', cursor: loading ? 'not-allowed' : 'pointer', marginTop: '0.5rem', transition: '0.2s' }}>
               {loading ? 'Processing...' : (isLogin ? 'Access Dashboard' : 'Initialize Account')}
             </button>
           </form>
 
           <p style={{ color: '#9ca3af', marginTop: '1.5rem', fontSize: '0.9rem' }}>
             {isLogin ? "Don't have an account? " : "Already have an account? "}
-            <span onClick={() => setIsLogin(!isLogin)} style={{ color: '#3b82f6', cursor: 'pointer', fontWeight: 'bold' }}>
+            <span onClick={() => setIsLogin(!isLogin)} style={{ color: '#10b981', cursor: 'pointer', fontWeight: 'bold' }}>
               {isLogin ? 'Sign Up' : 'Log In'}
             </span>
           </p>
