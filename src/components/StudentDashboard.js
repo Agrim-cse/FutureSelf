@@ -2,6 +2,7 @@ import React, { useEffect, useState } from 'react';
 import { useLocation, useNavigate } from 'react-router-dom';
 import { Line, Bar } from 'react-chartjs-2';
 import { Chart as ChartJS, CategoryScale, LinearScale, PointElement, LineElement, BarElement, Title, Tooltip, Filler, Legend } from 'chart.js';
+import Navbar from './Navbar'; // <-- IMPORTED NAVBAR
 import './Dashboard.css';
 
 ChartJS.register(CategoryScale, LinearScale, PointElement, LineElement, BarElement, Title, Tooltip, Filler, Legend);
@@ -13,7 +14,7 @@ const StudentDashboard = () => {
 
   // --- UI TABS & GAMIFICATION ---
   const [activeTab, setActiveTab] = useState('actions');
-  const [xp, setXp] = useState(1250);
+  const [xp, setXp] = useState(0); // Starts at 0, loaded from DB
   const [timeFilter, setTimeFilter] = useState('7days'); 
 
   // --- LOGGING STATE ---
@@ -32,11 +33,14 @@ const StudentDashboard = () => {
 
   useEffect(() => {
     const data = location.state || JSON.parse(localStorage.getItem('finquest_user'));
-    if (!data || data.profile.status !== 'non-earning') navigate('/onboarding');
-    else setUserData(data);
+    if (!data || data.profile.status !== 'non-earning') {
+      navigate('/onboarding');
+    } else {
+      setUserData(data);
+      setXp(data.xp || 0); // Load their XP
+    }
   }, [location, navigate]);
 
-  // EMI Calculator Formula
   const calculateEMI = (p, r, t) => {
     if (!p || !r || !t) return 0;
     const principal = Number(p);
@@ -55,15 +59,23 @@ const StudentDashboard = () => {
   const yearsToGrad = Math.max(1, Number(profile.gradYear) - currentYear);
   const monthsToGrad = yearsToGrad * 12;
 
-  // Stash considers the manual crisis deductions
   const currentStash = Math.max(0, Number(profile.savings) + currentPeriodData.save - totalCrisisApplied);
 
   const handleLogTransaction = (e) => {
     e.preventDefault();
     const val = Number(amount);
     if (val <= 0) return;
+    
     setCurrentPeriodData(prev => ({ ...prev, [category]: prev[category] + val }));
-    if (category === 'save') setXp(prev => prev + 50); 
+    
+    // XP REWARD SYSTEM
+    if (category === 'save') {
+      const newXp = xp + 50;
+      setXp(newXp);
+      const updatedData = { ...userData, xp: newXp };
+      localStorage.setItem('finquest_user', JSON.stringify(updatedData));
+      setUserData(updatedData);
+    }
     setAmount('');
   };
 
@@ -85,7 +97,6 @@ const StudentDashboard = () => {
     setTimeout(() => setCrisisAlert(null), 5000);
   };
 
-  // --- CHARTS ---
   const getHistoricalData = () => {
     let labels = []; let spentData = []; let savedData = [];
     let count = timeFilter === '7days' ? 7 : (timeFilter === '12weeks' ? 12 : (timeFilter === '12months' ? 12 : 5));
@@ -118,15 +129,10 @@ const StudentDashboard = () => {
   const getGradData = () => {
     let labels = []; let predicted = []; let loanData = [];
     let runPred = currentStash;
-    
-    // Sum total forecasted principal to plot
     let runLoan = loans.reduce((sum, loan) => sum + Number(loan.principal), 0);
     const monthlyReturn = 0.06 / 12; 
-    
-    // Average interest of active forecasted loans for the chart
     const avgInterest = loans.length > 0 ? loans.reduce((sum, l) => sum + Number(l.interest), 0) / loans.length : 0;
     const monthlyLoanInterest = (avgInterest / 100) / 12;
-
     const actualMonthlySave = currentPeriodData.save > 0 ? currentPeriodData.save : income * 0.2;
 
     for(let m=0; m<=monthsToGrad; m++) {
@@ -148,129 +154,129 @@ const StudentDashboard = () => {
     };
   };
 
+  // --- EXACT PLACEMENT OF NAVBAR ---
   return (
-    <div className="dash-container">
-      <header className="dash-header">
-        <div>
-          <div className="dash-logo"><span>Fin<span className="text-emerald">Quest</span> | CAMPUS</span></div>
-          <div style={{ color: '#9ca3af', marginTop: '0.5rem', fontSize: '0.9rem' }}>Class of {profile.gradYear}</div>
-        </div>
+    <>
+      <Navbar /> 
+      <div className="dash-container">
+        <header className="dash-header">
+          <div>
+            <div className="dash-logo"><span>Fin<span className="text-emerald">Quest</span> | CAMPUS</span></div>
+            <div style={{ color: '#9ca3af', marginTop: '0.5rem', fontSize: '0.9rem' }}>Class of {profile.gradYear}</div>
+          </div>
 
-        {/* TAB NAVIGATION */}
-        <div style={{ display: 'flex', gap: '0.5rem', backgroundColor: '#111827', padding: '0.5rem', borderRadius: '0.75rem', border: '1px solid #374151' }}>
-          <button onClick={() => setActiveTab('actions')} style={{ padding: '0.5rem 1.5rem', borderRadius: '0.5rem', fontWeight: 'bold', border: 'none', cursor: 'pointer', backgroundColor: activeTab === 'actions' ? '#3b82f6' : 'transparent', color: activeTab === 'actions' ? '#fff' : '#9ca3af' }}>
-            Action Center
-          </button>
-          <button onClick={() => setActiveTab('visualizer')} style={{ padding: '0.5rem 1.5rem', borderRadius: '0.5rem', fontWeight: 'bold', border: 'none', cursor: 'pointer', backgroundColor: activeTab === 'visualizer' ? '#3b82f6' : 'transparent', color: activeTab === 'visualizer' ? '#fff' : '#9ca3af' }}>
-            Data Visualizer
-          </button>
-        </div>
+          <div style={{ display: 'flex', gap: '0.5rem', backgroundColor: '#111827', padding: '0.5rem', borderRadius: '0.75rem', border: '1px solid #374151' }}>
+            <button onClick={() => setActiveTab('actions')} style={{ padding: '0.5rem 1.5rem', borderRadius: '0.5rem', fontWeight: 'bold', border: 'none', cursor: 'pointer', backgroundColor: activeTab === 'actions' ? '#3b82f6' : 'transparent', color: activeTab === 'actions' ? '#fff' : '#9ca3af' }}>
+              Action Center
+            </button>
+            <button onClick={() => setActiveTab('visualizer')} style={{ padding: '0.5rem 1.5rem', borderRadius: '0.5rem', fontWeight: 'bold', border: 'none', cursor: 'pointer', backgroundColor: activeTab === 'visualizer' ? '#3b82f6' : 'transparent', color: activeTab === 'visualizer' ? '#fff' : '#9ca3af' }}>
+              Data Visualizer
+            </button>
+          </div>
 
-        <div style={{ textAlign: 'right' }}>
-          <div style={{ fontSize: '0.85rem', color: '#9ca3af', marginBottom: '4px' }}>Rank: {archetype.title}</div>
-          <span style={{ fontWeight: 'bold', color: '#3b82f6' }}>{xp} XP</span>
-        </div>
-      </header>
+          <div style={{ textAlign: 'right' }}>
+            <div style={{ fontSize: '0.85rem', color: '#9ca3af', marginBottom: '4px' }}>Rank: {archetype.title}</div>
+            <span style={{ fontWeight: 'bold', color: '#3b82f6' }}>{xp} XP</span>
+          </div>
+        </header>
 
-      <main className="dash-main" style={{ gridTemplateColumns: '1fr 1fr' }}>
-        
-        {/* ==================== TAB 1: ACTION CENTER ==================== */}
-        {activeTab === 'actions' && (
-          <>
-            <div className="dash-col" style={{ animation: 'fadeIn 0.3s' }}>
-              <div style={{ backgroundColor: '#111827', padding: '1.5rem', borderRadius: '1rem', border: '1px solid #374151' }}>
-                <h3 style={{ fontSize: '1.25rem', fontWeight: 'bold', marginBottom: '1.5rem' }}>Log Activity</h3>
-                <form onSubmit={handleLogTransaction} style={{ display: 'flex', flexDirection: 'column', gap: '1rem' }}>
-                  <input type="number" placeholder="Enter Amount (₹)" value={amount} onChange={(e) => setAmount(e.target.value)} style={{ width: '100%', padding: '1rem', borderRadius: '0.5rem', background: '#030712', border: '1px solid #374151', color: '#fff', fontSize: '1.1rem', boxSizing: 'border-box' }} />
-                  <select value={category} onChange={(e) => setCategory(e.target.value)} style={{ padding: '0.75rem', background: '#030712', color: '#fff', border: '1px solid #374151', borderRadius: '0.5rem', outline: 'none' }}>
-                    <option value="essentials">Essentials (Food, Rent, Transport)</option>
-                    <option value="academic">Academic (Books, Fees, Courses)</option>
-                    <option value="lifestyle">Lifestyle (Outings, Subs, Wants)</option>
-                    <option value="save">Savings / Micro-Investments</option>
-                  </select>
-                  <button type="submit" style={{ padding: '0.75rem', background: '#10b981', color: '#030712', fontWeight: 'bold', borderRadius: '0.5rem', border: 'none', cursor: 'pointer' }}>Push to Ledger</button>
-                </form>
-              </div>
-
-              <div style={{ backgroundColor: '#111827', padding: '1.5rem', borderRadius: '1rem', border: '1px solid #ef4444' }}>
-                <h3 style={{ fontSize: '1.1rem', fontWeight: 'bold', color: '#ef4444', marginBottom: '1rem' }}>⚠️ Manual Crisis Simulator</h3>
-                <form onSubmit={handleManualCrisis} style={{ display: 'flex', gap: '0.5rem' }}>
-                  <input type="number" placeholder="Unexpected Expense (₹)" value={crisisAmount} onChange={(e) => setCrisisAmount(e.target.value)} style={{ flex: 1, padding: '0.75rem', borderRadius: '0.5rem', background: '#030712', border: '1px solid #ef4444', color: '#fff' }} />
-                  <button type="submit" style={{ padding: '0.75rem 1rem', background: '#ef4444', color: '#fff', fontWeight: 'bold', borderRadius: '0.5rem', border: 'none', cursor: 'pointer' }}>Deduct</button>
-                </form>
-                {crisisAlert && <div style={{ marginTop: '1rem', color: '#ef4444', fontSize: '0.85rem' }}>{crisisAlert}</div>}
-              </div>
-            </div>
-
-            <div className="dash-col" style={{ animation: 'fadeIn 0.3s' }}>
-              <div style={{ backgroundColor: '#111827', padding: '1.5rem', borderRadius: '1rem', border: '1px solid #374151' }}>
-                <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '1.5rem' }}>
-                  <h3 style={{ fontSize: '1.1rem', fontWeight: 'bold', color: '#fbbf24' }}>Forecast Student Loans</h3>
-                </div>
-                
-                <div style={{ display: 'flex', flexDirection: 'column', gap: '0.75rem', marginBottom: '1.5rem', maxHeight: '250px', overflowY: 'auto' }}>
-                  {loans.length === 0 ? <p style={{ color: '#9ca3af', fontSize: '0.85rem' }}>Add projected loans to forecast your post-grad EMI burden.</p> : null}
-                  {loans.map(loan => (
-                    <div key={loan.id} style={{ display: 'flex', justifyContent: 'space-between', backgroundColor: '#030712', padding: '1rem', borderRadius: '0.5rem', borderLeft: '4px solid #fbbf24' }}>
-                      <div>
-                        <h4 style={{ fontWeight: 'bold', color: '#f3f4f6' }}>{loan.name}</h4>
-                        <p style={{ fontSize: '0.8rem', color: '#9ca3af' }}>Princ: ₹{Number(loan.principal).toLocaleString()} | {loan.interest}%</p>
-                      </div>
-                      <div style={{ textAlign: 'right' }}>
-                        <div style={{ fontSize: '0.75rem', color: '#9ca3af' }}>Forecasted EMI</div>
-                        <div style={{ fontWeight: 'bold', color: '#ef4444' }}>₹{Number(loan.emi).toLocaleString()}<span style={{ fontSize: '0.7rem' }}>/mo</span></div>
-                      </div>
-                    </div>
-                  ))}
-                </div>
-
-                <div style={{ borderTop: '1px dashed #374151', paddingTop: '1.5rem' }}>
-                  <h4 style={{ fontSize: '0.85rem', color: '#d1d5db', marginBottom: '1rem', textTransform: 'uppercase' }}>+ Add Loan Forecast</h4>
-                  <form onSubmit={handleAddLoan} style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '0.5rem' }}>
-                    <input type="text" placeholder="Loan Name" value={newLoan.name} onChange={e => setNewLoan({...newLoan, name: e.target.value})} style={{ gridColumn: 'span 2', padding: '0.75rem', background: '#030712', border: '1px solid #374151', color: '#fff', borderRadius: '0.5rem' }} />
-                    <input type="number" placeholder="Principal (₹)" value={newLoan.principal} onChange={e => setNewLoan({...newLoan, principal: e.target.value})} style={{ gridColumn: 'span 2', padding: '0.75rem', background: '#030712', border: '1px solid #374151', color: '#fff', borderRadius: '0.5rem' }} />
-                    <input type="number" placeholder="Interest %" value={newLoan.interest} onChange={e => setNewLoan({...newLoan, interest: e.target.value})} style={{ padding: '0.75rem', background: '#030712', border: '1px solid #374151', color: '#fff', borderRadius: '0.5rem' }} />
-                    <input type="number" placeholder="Years" value={newLoan.tenure} onChange={e => setNewLoan({...newLoan, tenure: e.target.value})} style={{ padding: '0.75rem', background: '#030712', border: '1px solid #374151', color: '#fff', borderRadius: '0.5rem' }} />
-                    <button type="submit" style={{ gridColumn: 'span 2', padding: '0.75rem', background: '#374151', color: '#fff', border: 'none', borderRadius: '0.5rem', cursor: 'pointer', fontWeight: 'bold' }}>Add to Forecast</button>
+        <main className="dash-main" style={{ gridTemplateColumns: '1fr 1fr' }}>
+          
+          {activeTab === 'actions' && (
+            <>
+              <div className="dash-col" style={{ animation: 'fadeIn 0.3s' }}>
+                <div style={{ backgroundColor: '#111827', padding: '1.5rem', borderRadius: '1rem', border: '1px solid #374151' }}>
+                  <h3 style={{ fontSize: '1.25rem', fontWeight: 'bold', marginBottom: '1.5rem' }}>Log Activity</h3>
+                  <form onSubmit={handleLogTransaction} style={{ display: 'flex', flexDirection: 'column', gap: '1rem' }}>
+                    <input type="number" placeholder="Enter Amount (₹)" value={amount} onChange={(e) => setAmount(e.target.value)} style={{ width: '100%', padding: '1rem', borderRadius: '0.5rem', background: '#030712', border: '1px solid #374151', color: '#fff', fontSize: '1.1rem', boxSizing: 'border-box' }} />
+                    <select value={category} onChange={(e) => setCategory(e.target.value)} style={{ padding: '0.75rem', background: '#030712', color: '#fff', border: '1px solid #374151', borderRadius: '0.5rem', outline: 'none' }}>
+                      <option value="essentials">Essentials (Food, Rent, Transport)</option>
+                      <option value="academic">Academic (Books, Fees, Courses)</option>
+                      <option value="lifestyle">Lifestyle (Outings, Subs, Wants)</option>
+                      <option value="save">Savings / Micro-Investments</option>
+                    </select>
+                    <button type="submit" style={{ padding: '0.75rem', background: '#10b981', color: '#030712', fontWeight: 'bold', borderRadius: '0.5rem', border: 'none', cursor: 'pointer' }}>Push to Ledger</button>
                   </form>
                 </div>
 
-              </div>
-            </div>
-          </>
-        )}
-
-        {/* ==================== TAB 2: DATA VISUALIZER ==================== */}
-        {activeTab === 'visualizer' && (
-          <>
-            <div className="dash-col" style={{ animation: 'fadeIn 0.3s' }}>
-              <div style={{ backgroundColor: '#111827', padding: '1.5rem', borderRadius: '1rem', border: '1px solid #374151' }}>
-                <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '1rem' }}>
-                  <h3 style={{ fontSize: '1.25rem', fontWeight: 'bold' }}>Historical Tracker</h3>
-                  <select value={timeFilter} onChange={(e) => setTimeFilter(e.target.value)} style={{ background: '#030712', color: '#d1d5db', border: '1px solid #374151', padding: '0.25rem 0.5rem', borderRadius: '0.25rem', outline: 'none' }}>
-                    <option value="7days">Last 7 Days</option>
-                    <option value="12weeks">Past 12 Weeks</option>
-                    <option value="12months">Past 12 Months</option>
-                    <option value="5years">Past 5 Years</option>
-                  </select>
+                <div style={{ backgroundColor: '#111827', padding: '1.5rem', borderRadius: '1rem', border: '1px solid #ef4444' }}>
+                  <h3 style={{ fontSize: '1.1rem', fontWeight: 'bold', color: '#ef4444', marginBottom: '1rem' }}>⚠️ Manual Crisis Simulator</h3>
+                  <form onSubmit={handleManualCrisis} style={{ display: 'flex', gap: '0.5rem' }}>
+                    <input type="number" placeholder="Unexpected Expense (₹)" value={crisisAmount} onChange={(e) => setCrisisAmount(e.target.value)} style={{ flex: 1, padding: '0.75rem', borderRadius: '0.5rem', background: '#030712', border: '1px solid #ef4444', color: '#fff' }} />
+                    <button type="submit" style={{ padding: '0.75rem 1rem', background: '#ef4444', color: '#fff', fontWeight: 'bold', borderRadius: '0.5rem', border: 'none', cursor: 'pointer' }}>Deduct</button>
+                  </form>
+                  {crisisAlert && <div style={{ marginTop: '1rem', color: '#ef4444', fontSize: '0.85rem' }}>{crisisAlert}</div>}
                 </div>
-                <div style={{ height: '350px' }}><Bar data={getHistoricalData()} options={{ responsive: true, maintainAspectRatio: false }} /></div>
               </div>
-            </div>
 
-            <div className="dash-col" style={{ animation: 'fadeIn 0.3s' }}>
-              <div style={{ backgroundColor: '#111827', padding: '1.5rem', borderRadius: '1rem', border: '1px solid #374151' }}>
-                <h3 style={{ fontSize: '1.25rem', fontWeight: 'bold', marginBottom: '0.5rem' }}>Graduation Trajectory</h3>
-                <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: '1rem' }}>
-                  <p style={{ color: '#9ca3af', fontSize: '0.85rem' }}>Current Stash: <strong style={{color: '#10b981'}}>₹{currentStash.toLocaleString()}</strong></p>
+              <div className="dash-col" style={{ animation: 'fadeIn 0.3s' }}>
+                <div style={{ backgroundColor: '#111827', padding: '1.5rem', borderRadius: '1rem', border: '1px solid #374151' }}>
+                  <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '1.5rem' }}>
+                    <h3 style={{ fontSize: '1.1rem', fontWeight: 'bold', color: '#fbbf24' }}>Forecast Student Loans</h3>
+                  </div>
+                  
+                  <div style={{ display: 'flex', flexDirection: 'column', gap: '0.75rem', marginBottom: '1.5rem', maxHeight: '250px', overflowY: 'auto' }}>
+                    {loans.length === 0 ? <p style={{ color: '#9ca3af', fontSize: '0.85rem' }}>Add projected loans to forecast your post-grad EMI burden.</p> : null}
+                    {loans.map(loan => (
+                      <div key={loan.id} style={{ display: 'flex', justifyContent: 'space-between', backgroundColor: '#030712', padding: '1rem', borderRadius: '0.5rem', borderLeft: '4px solid #fbbf24' }}>
+                        <div>
+                          <h4 style={{ fontWeight: 'bold', color: '#f3f4f6' }}>{loan.name}</h4>
+                          <p style={{ fontSize: '0.8rem', color: '#9ca3af' }}>Princ: ₹{Number(loan.principal).toLocaleString()} | {loan.interest}%</p>
+                        </div>
+                        <div style={{ textAlign: 'right' }}>
+                          <div style={{ fontSize: '0.75rem', color: '#9ca3af' }}>Forecasted EMI</div>
+                          <div style={{ fontWeight: 'bold', color: '#ef4444' }}>₹{Number(loan.emi).toLocaleString()}<span style={{ fontSize: '0.7rem' }}>/mo</span></div>
+                        </div>
+                      </div>
+                    ))}
+                  </div>
+
+                  <div style={{ borderTop: '1px dashed #374151', paddingTop: '1.5rem' }}>
+                    <h4 style={{ fontSize: '0.85rem', color: '#d1d5db', marginBottom: '1rem', textTransform: 'uppercase' }}>+ Add Loan Forecast</h4>
+                    <form onSubmit={handleAddLoan} style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '0.5rem' }}>
+                      <input type="text" placeholder="Loan Name" value={newLoan.name} onChange={e => setNewLoan({...newLoan, name: e.target.value})} style={{ gridColumn: 'span 2', padding: '0.75rem', background: '#030712', border: '1px solid #374151', color: '#fff', borderRadius: '0.5rem' }} />
+                      <input type="number" placeholder="Principal (₹)" value={newLoan.principal} onChange={e => setNewLoan({...newLoan, principal: e.target.value})} style={{ gridColumn: 'span 2', padding: '0.75rem', background: '#030712', border: '1px solid #374151', color: '#fff', borderRadius: '0.5rem' }} />
+                      <input type="number" placeholder="Interest %" value={newLoan.interest} onChange={e => setNewLoan({...newLoan, interest: e.target.value})} style={{ padding: '0.75rem', background: '#030712', border: '1px solid #374151', color: '#fff', borderRadius: '0.5rem' }} />
+                      <input type="number" placeholder="Years" value={newLoan.tenure} onChange={e => setNewLoan({...newLoan, tenure: e.target.value})} style={{ padding: '0.75rem', background: '#030712', border: '1px solid #374151', color: '#fff', borderRadius: '0.5rem' }} />
+                      <button type="submit" style={{ gridColumn: 'span 2', padding: '0.75rem', background: '#374151', color: '#fff', border: 'none', borderRadius: '0.5rem', cursor: 'pointer', fontWeight: 'bold' }}>Add to Forecast</button>
+                    </form>
+                  </div>
                 </div>
-                <div style={{ height: '300px' }}><Line data={getGradData()} options={{ responsive: true, maintainAspectRatio: false }} /></div>
               </div>
-            </div>
-          </>
-        )}
-      </main>
-    </div>
+            </>
+          )}
+
+          {activeTab === 'visualizer' && (
+            <>
+              <div className="dash-col" style={{ animation: 'fadeIn 0.3s' }}>
+                <div style={{ backgroundColor: '#111827', padding: '1.5rem', borderRadius: '1rem', border: '1px solid #374151' }}>
+                  <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '1rem' }}>
+                    <h3 style={{ fontSize: '1.25rem', fontWeight: 'bold' }}>Historical Tracker</h3>
+                    <select value={timeFilter} onChange={(e) => setTimeFilter(e.target.value)} style={{ background: '#030712', color: '#d1d5db', border: '1px solid #374151', padding: '0.25rem 0.5rem', borderRadius: '0.25rem', outline: 'none' }}>
+                      <option value="7days">Last 7 Days</option>
+                      <option value="12weeks">Past 12 Weeks</option>
+                      <option value="12months">Past 12 Months</option>
+                      <option value="5years">Past 5 Years</option>
+                    </select>
+                  </div>
+                  <div style={{ height: '350px' }}><Bar data={getHistoricalData()} options={{ responsive: true, maintainAspectRatio: false }} /></div>
+                </div>
+              </div>
+
+              <div className="dash-col" style={{ animation: 'fadeIn 0.3s' }}>
+                <div style={{ backgroundColor: '#111827', padding: '1.5rem', borderRadius: '1rem', border: '1px solid #374151' }}>
+                  <h3 style={{ fontSize: '1.25rem', fontWeight: 'bold', marginBottom: '0.5rem' }}>Graduation Trajectory</h3>
+                  <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: '1rem' }}>
+                    <p style={{ color: '#9ca3af', fontSize: '0.85rem' }}>Current Stash: <strong style={{color: '#10b981'}}>₹{currentStash.toLocaleString()}</strong></p>
+                  </div>
+                  <div style={{ height: '300px' }}><Line data={getGradData()} options={{ responsive: true, maintainAspectRatio: false }} /></div>
+                </div>
+              </div>
+            </>
+          )}
+        </main>
+      </div>
+    </>
   );
 };
 

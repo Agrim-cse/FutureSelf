@@ -5,6 +5,7 @@ import AuthPage from './components/AuthPage';
 import Onboarding from './components/Onboarding';
 import StudentDashboard from './components/StudentDashboard'; // Import Student
 import ProDashboard from './components/ProDashboard';         // Import Pro
+import Quests from './components/Quests';
 
 function App() {
   return (
@@ -16,6 +17,7 @@ function App() {
         <Route path="/student-dashboard" element={<StudentDashboard />} />
         <Route path="/pro-dashboard" element={<ProDashboard />} />
         {/* You can delete the old generic /dashboard route! */}
+        <Route path="/quests" element={<Quests />} />
       </Routes>
     </Router>
   );
