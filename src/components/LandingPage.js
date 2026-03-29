@@ -83,6 +83,9 @@ const LandingPage = () => {
           <button onClick={() => scrollToSection('leaderboard')} className="lp-nav-link">
             Leaderboard
           </button>
+          <button onClick={() => scrollToSection('about')} className="lp-nav-link">
+            About
+          </button>
           <button onClick={() => navigate('/auth')} className="lp-btn-primary">
             Log In
           </button>
@@ -181,6 +184,32 @@ const LandingPage = () => {
               ))}
             </>
           )}
+        </div>
+      </section>
+
+      {/* SECTION 4: About Section */}
+      <section id="about" className="lp-about" style={{
+        background: 'linear-gradient(135deg, rgba(16, 185, 129, 0.08) 0%, rgba(139, 92, 246, 0.08) 100%)',
+        padding: '4rem 2rem',
+        borderRadius: '1.5rem',
+        margin: '4rem auto',
+        maxWidth: '1000px',
+        border: '1px solid rgba(16, 185, 129, 0.1)'
+      }}>
+        <h2 className="lp-section-title" style={{ marginBottom: '2rem' }}>About FinQuest</h2>
+        <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(280px, 1fr))', gap: '2rem' }}>
+          <div style={{ color: '#d1d5db', lineHeight: '1.8' }}>
+            <h3 style={{ color: '#f3f4f6', fontSize: '1.1rem', fontWeight: '600', marginBottom: '0.75rem' }}>Our Mission</h3>
+            <p style={{ margin: 0 }}>Turn financial literacy into an engaging game. We believe understanding compound interest and building wealth should be fun, visual, and rewarding—not intimidating spreadsheets.</p>
+          </div>
+          <div style={{ color: '#d1d5db', lineHeight: '1.8' }}>
+            <h3 style={{ color: '#f3f4f6', fontSize: '1.1rem', fontWeight: '600', marginBottom: '0.75rem' }}>How It Works</h3>
+            <p style={{ margin: 0 }}>Log daily spending, allocate savings across assets, and watch your wealth grow in real-time. Earn XP, maintain streaks, and compete globally while building genuine financial literacy.</p>
+          </div>
+          <div style={{ color: '#d1d5db', lineHeight: '1.8' }}>
+            <h3 style={{ color: '#f3f4f6', fontSize: '1.1rem', fontWeight: '600', marginBottom: '0.75rem' }}>For Everyone</h3>
+            <p style={{ margin: 0 }}>Whether you're a student learning the 50-30-20 rule, a professional building wealth, or planning for retirement—FinQuest adapts to your financial stage and teaches long-term thinking.</p>
+          </div>
         </div>
       </section>
 

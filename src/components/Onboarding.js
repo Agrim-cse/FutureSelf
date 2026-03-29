@@ -197,7 +197,7 @@ const Onboarding = () => {
       result.incomeTier = incomeNum > 15000 ? "High Allowance" : "Standard Allowance";
       
       if (dominantTrait === 'yolo') {
-        result.title = "The Thrill Seeker";
+        result.title = "The Spark";
         result.description = "You are living for today, but your future self is entirely unprotected.";
         result.analysis = [
           "⚠️ High impulse spending, low emergency preparedness.",
@@ -205,7 +205,7 @@ const Onboarding = () => {
           "✅ Fix: Build a 1-month emergency buffer immediately so you can afford your lifestyle safely."
         ];
       } else if (dominantTrait === 'survivor') {
-        result.title = "The Grinder";
+        result.title = "The Guardian";
         result.description = "You have iron discipline, but you are playing completely on defense.";
         result.analysis = [
           "⚠️ Excellent at surviving on a budget, but terrified of spending.",
@@ -213,7 +213,7 @@ const Onboarding = () => {
           "✅ Fix: Transition from hoarding cash to making your first low-risk investment."
         ];
       } else {
-        result.title = "The Prodigy";
+        result.title = "The Navigator";
         result.description = "Your financial habits are flawless. You understand the math.";
         result.analysis = [
           "✅ Optimized spending and an eye for compounding.",
@@ -225,7 +225,7 @@ const Onboarding = () => {
       result.incomeTier = incomeNum > 60000 ? "High Earner" : "Scaling Earner";
       
       if (dominantTrait === 'yolo') {
-        result.title = "The HENRY (High Earner, Not Rich Yet)";
+        result.title = "The Climber";
         result.description = "You make real adult money, but lifestyle creep is eating every rupee.";
         result.analysis = [
           "⚠️ Your spending rises exactly as fast as your income.",
@@ -233,7 +233,7 @@ const Onboarding = () => {
           "✅ Fix: Cap your 'Fun Money' and automate 20% of your income into investments before you see it."
         ];
       } else if (dominantTrait === 'survivor') {
-        result.title = "The Safety Netter";
+        result.title = "The Conservator";
         result.description = "You save diligently, but you are afraid to let your money work for you.";
         result.analysis = [
           "⚠️ High cash reserves, low market participation.",
@@ -241,7 +241,7 @@ const Onboarding = () => {
           "✅ Fix: Deploy your idle cash into a diversified 'Engine' portfolio to outpace inflation."
         ];
       } else {
-        result.title = "The Architect";
+        result.title = "The Visionary";
         result.description = "Cold, calculating, and fully optimized. Welcome to the command center.";
         result.analysis = [
           "✅ You understand asset allocation and long-term compounding.",

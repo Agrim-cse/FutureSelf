@@ -1,4 +1,4 @@
-import React from 'react';
+import React, { useState } from 'react';
 import { useNavigate, useLocation } from 'react-router-dom';
 import { auth } from '../firebase';
 import { signOut } from 'firebase/auth';
@@ -7,6 +7,7 @@ import './Navbar.css';
 const Navbar = () => {
   const navigate = useNavigate();
   const location = useLocation();
+  const [showLogoutConfirm, setShowLogoutConfirm] = useState(false);
   
   // Grab user data to know their status and name
   const userData = JSON.parse(localStorage.getItem('finquest_user'));
@@ -19,6 +20,10 @@ const Navbar = () => {
   const activeClass = isStudent ? 'student-active' : 'pro-active';
 
   const handleLogout = () => {
+    setShowLogoutConfirm(true);
+  };
+
+  const confirmLogout = () => {
     // 1. Securely sign out from Firebase
     signOut(auth).then(() => {
       // 2. Clear the local storage
@@ -31,6 +36,10 @@ const Navbar = () => {
       localStorage.clear();
       navigate('/');
     });
+  };
+
+  const cancelLogout = () => {
+    setShowLogoutConfirm(false);
   };
 
   const handleNavHome = () => {
@@ -78,6 +87,32 @@ const Navbar = () => {
           Log Out
         </button>
       </div>
+
+      {/* Logout Confirmation Modal */}
+      {showLogoutConfirm && (
+        <div style={{
+          position: 'fixed', top: 0, left: 0, right: 0, bottom: 0,
+          backgroundColor: 'rgba(0, 0, 0, 0.7)', display: 'flex', alignItems: 'center', justifyContent: 'center', zIndex: 2000
+        }}>
+          <div style={{
+            backgroundColor: '#111827', border: '1px solid #374151', borderRadius: '1rem', padding: '2rem',
+            maxWidth: '400px', width: '90%'
+          }}>
+            <h3 style={{ fontSize: '1.25rem', fontWeight: 'bold', marginBottom: '1rem', color: '#f3f4f6' }}>Confirm Logout</h3>
+            <p style={{ color: '#9ca3af', marginBottom: '1.5rem' }}>
+              Are you sure you want to log out? Your progress is safely saved.
+            </p>
+            <div style={{ display: 'flex', gap: '1rem' }}>
+              <button onClick={cancelLogout} style={{ flex: 1, padding: '0.75rem', backgroundColor: '#374151', color: '#fff', border: 'none', borderRadius: '0.5rem', cursor: 'pointer', fontWeight: 'bold' }}>
+                Cancel
+              </button>
+              <button onClick={confirmLogout} style={{ flex: 1, padding: '0.75rem', backgroundColor: themeColor, color: isStudent ? '#030712' : '#fff', border: 'none', borderRadius: '0.5rem', cursor: 'pointer', fontWeight: 'bold' }}>
+                Log Out
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
     </nav>
   );
 };

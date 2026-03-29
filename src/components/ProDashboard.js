@@ -33,6 +33,7 @@ const ProDashboard = () => {
   const [newLib, setNewLib] = useState({ name: '', principal: '', interest: '', emi: '' });
 
   const [crisisLoss, setCrisisLoss] = useState('');
+  const [crisisReason, setCrisisReason] = useState('');
   const [crisisAlert, setCrisisAlert] = useState(null);
 
   const [whatIfExtra, setWhatIfExtra] = useState(0);
@@ -43,6 +44,7 @@ const ProDashboard = () => {
 
   // --- STREAK TOOLTIP STATE ---
   const [showStreakTooltip, setShowStreakTooltip] = useState(false);
+  const [showInfoTooltip, setShowInfoTooltip] = useState(false);
 
   // 1. DATA INITIALIZATION HOOK
   useEffect(() => {
@@ -60,6 +62,14 @@ const ProDashboard = () => {
         setPortfolio(savedDb.portfolio || { equity: 0, debt: 0, gold: 0 });
         setLedger(savedDb.ledger || []);
         setLiabilities(savedDb.liabilities || []);
+
+        // --- DAILY QUEST RESET LOGIC ---
+        const todayStr = new Date().toDateString();
+        const lastQuestsResetDate = data.lastQuestsResetDate || todayStr;
+        if (lastQuestsResetDate !== todayStr) {
+          const updatedUser = { ...data, todayCompletedQuests: [], lastQuestsResetDate: todayStr };
+          localStorage.setItem('finquest_user', JSON.stringify(updatedUser));
+        }
 
         // --- STREAK SYSTEM: Pro 50-30-20 Rule (Weekly) ---
         const today = new Date();
@@ -117,11 +127,11 @@ const ProDashboard = () => {
         setLedger(data.dashboardData.ledger || []);
 
         // --- STREAK SYSTEM: First time check ---
-        const today = new Date().toDateString();
-        const lastStreakDate = data.lastStreakDate || today;
-        if (lastStreakDate !== today) {
+        const todayDate = new Date().toDateString();
+        const lastStreakDate = data.lastStreakDate || todayDate;
+        if (lastStreakDate !== todayDate) {
           const newStreak = 1;
-          const updatedData = { ...data, streak: newStreak, lastStreakDate: today };
+          const updatedData = { ...data, streak: newStreak, lastStreakDate: todayDate };
           localStorage.setItem('finquest_user', JSON.stringify(updatedData));
           setUserData(updatedData);
         }
@@ -140,11 +150,15 @@ const ProDashboard = () => {
         // Update Local Storage for speed
         localStorage.setItem(`db_${userData.profile.name}`, JSON.stringify(dbState));
         
-        // Silent Cloud Backup - include streak & date for daily refresh logic
+        // Silent Cloud Backup - include streak, date, quest fields for daily refresh logic
         await setDoc(doc(db, "users", user.uid), {
           dashboardData: dbState,
           streak: userData.streak || 1,
           lastStreakDate: userData.lastStreakDate || new Date().toDateString(),
+          lastQuestsResetDate: userData.lastQuestsResetDate || new Date().toDateString(),
+          todayCompletedQuests: userData.todayCompletedQuests || [],
+          completedQuests: userData.completedQuests || [],
+          claimedAchievements: userData.claimedAchievements || [],
           lastUpdated: new Date().toISOString()
         }, { merge: true }).catch(err => console.error("Cloud Sync Error:", err));
       }
@@ -154,7 +168,23 @@ const ProDashboard = () => {
 
   if (!userData) return <div className="dash-container">Loading Pro Engine...</div>;
 
-  const { profile, archetype } = userData;
+  const { profile } = userData;
+  
+  // Map old tier names to new ones
+  const tierNameMap = {
+    'The Thrill Seeker': 'The Spark',
+    'The Grinder': 'The Guardian',
+    'The Prodigy': 'The Navigator',
+    'The HENRY (High Earner, Not Rich Yet)': 'The Climber',
+    'The Safety Netter': 'The Conservator',
+    'The Architect': 'The Visionary'
+  };
+  
+  const archetype = {
+    ...userData.archetype,
+    title: tierNameMap[userData.archetype.title] || userData.archetype.title
+  };
+  
   const income = Number(profile.income);
   const yearsToRetire = Math.max(1, Number(profile.retireAge) - Number(profile.age));
   const totalEmi = liabilities.reduce((sum, lib) => sum + Number(lib.emi), 0);
@@ -241,8 +271,21 @@ const ProDashboard = () => {
       if (newDebt < 0) { newEquity += newDebt; newDebt = 0; }
       return { ...prev, debt: newDebt, equity: Math.max(0, newEquity) };
     });
+    
+    // Add crisis entry to ledger
+    const entry = {
+      id: Date.now(),
+      category: 'contingency',
+      amount: loss,
+      reason: crisisReason,
+      date: new Date().toLocaleDateString(),
+      timestamp: new Date().toISOString()
+    };
+    setLedger([...ledger, entry]);
+    
     setCrisisAlert(`🚨 Applied ₹${loss.toLocaleString()} loss. Portfolio adjusted!`);
     setCrisisLoss('');
+    setCrisisReason('');
     setTimeout(() => setCrisisAlert(null), 5000);
   };
 
@@ -387,9 +430,28 @@ const ProDashboard = () => {
                 </div>
 
                 <div style={{ backgroundColor: '#111827', padding: '1.5rem', borderRadius: '1rem', border: '1px solid #ef4444' }}>
-                  <h3 style={{ fontSize: '1.1rem', fontWeight: 'bold', color: '#ef4444', marginBottom: '1rem' }}>⚠️ Manual Crisis Simulator</h3>
-                  <form onSubmit={handleManualCrisis} style={{ display: 'flex', gap: '0.5rem' }}>
-                    <input type="number" placeholder="Loss Amount (₹)" value={crisisLoss} onChange={(e) => setCrisisLoss(e.target.value)} style={{ flex: 1, padding: '0.75rem', borderRadius: '0.5rem', background: '#030712', border: '1px solid #ef4444', color: '#fff' }} />
+                  <div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem', marginBottom: '1rem' }}>
+                    <h3 style={{ fontSize: '1.1rem', fontWeight: 'bold', color: '#ef4444', margin: 0 }}>Contingencies</h3>
+                    <div style={{ position: 'relative', display: 'inline-block', cursor: 'pointer' }}
+                      onMouseEnter={() => setShowInfoTooltip(true)}
+                      onMouseLeave={() => setShowInfoTooltip(false)}
+                    >
+                      <span style={{ fontSize: '0.9rem', color: '#9ca3af', border: '1px solid #9ca3af', borderRadius: '50%', width: '18px', height: '18px', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>ⓘ</span>
+                      {showInfoTooltip && (
+                        <div style={{
+                          position: 'absolute', bottom: '125%', left: '-80px', width: '200px',
+                          backgroundColor: 'rgba(59, 130, 246, 1)', border: '1px solid #3b82f6', borderRadius: '0.5rem',
+                          padding: '0.75rem', zIndex: 10, whiteSpace: 'normal', fontSize: '0.8rem', color: '#fff',
+                          boxShadow: '0 4px 12px rgba(0, 0, 0, 0.3)'
+                        }}>
+                          add your unexpected expense
+                        </div>
+                      )}
+                    </div>
+                  </div>
+                  <form onSubmit={handleManualCrisis} style={{ display: 'flex', flexDirection: 'column', gap: '0.75rem' }}>
+                    <input type="number" placeholder="Loss Amount (₹)" value={crisisLoss} onChange={(e) => setCrisisLoss(e.target.value)} style={{ padding: '0.75rem', borderRadius: '0.5rem', background: '#030712', border: '1px solid #ef4444', color: '#fff' }} />
+                    <input type="text" placeholder="Reason for contingency" value={crisisReason} onChange={(e) => setCrisisReason(e.target.value)} style={{ padding: '0.75rem', borderRadius: '0.5rem', background: '#030712', border: '1px solid #ef4444', color: '#fff' }} />
                     <button type="submit" style={{ padding: '0.75rem 1rem', background: '#ef4444', color: '#fff', fontWeight: 'bold', borderRadius: '0.5rem', border: 'none', cursor: 'pointer' }}>Apply Hit</button>
                   </form>
                   {crisisAlert && <div style={{ marginTop: '1rem', color: '#ef4444', fontSize: '0.85rem' }}>{crisisAlert}</div>}
@@ -507,12 +569,13 @@ const ProDashboard = () => {
                       <p style={{ color: '#9ca3af', textAlign: 'center', padding: '2rem' }}>No transactions recorded for this period.</p>
                     ) : (
                       getFilteredLedger().map(entry => (
-                        <div key={entry.id} style={{ backgroundColor: '#1f2937', padding: '1rem', borderRadius: '0.5rem', border: '1px solid #374151', display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
-                          <div>
-                            <p style={{ fontWeight: 'bold', color: '#f3f4f6', marginBottom: '0.25rem' }}>{entry.category === 'invest' ? `Invest - ${entry.assetClass}` : `Expense - ${entry.category}`}</p>
-                            <p style={{ fontSize: '0.85rem', color: '#9ca3af' }}>{entry.date} at {entry.timestamp.split('T')[1].split(':')[0]}:{entry.timestamp.split('T')[1].split(':')[1]}</p>
+                        <div key={entry.id} style={{ backgroundColor: '#1f2937', padding: '1rem', borderRadius: '0.5rem', border: entry.category === 'contingency' ? '1px solid #ef4444' : '1px solid #374151', display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+                          <div style={{ flex: 1 }}>
+                            <p style={{ fontWeight: 'bold', color: '#f3f4f6', marginBottom: '0.25rem' }}>{entry.category === 'contingency' ? 'Contingency' : (entry.category === 'invest' ? `Invest - ${entry.assetClass}` : `Expense - ${entry.category}`)}</p>
+                            <p style={{ fontSize: '0.85rem', color: '#9ca3af', marginBottom: '0.25rem' }}>{entry.date} at {entry.timestamp.split('T')[1].split(':')[0]}:{entry.timestamp.split('T')[1].split(':')[1]}</p>
+                            {entry.reason && <p style={{ fontSize: '0.8rem', color: '#d1d5db', fontStyle: 'italic' }}>Reason: {entry.reason}</p>}
                           </div>
-                          <p style={{ fontWeight: 'bold', color: '#8b5cf6', fontSize: '1.1rem' }}>₹{entry.amount.toLocaleString()}</p>
+                          <p style={{ fontWeight: 'bold', color: entry.category === 'contingency' ? '#ef4444' : '#8b5cf6', fontSize: '1.1rem', marginLeft: '1rem' }}>₹{entry.amount.toLocaleString()}</p>
                         </div>
                       ))
                     )}

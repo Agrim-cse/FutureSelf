@@ -24,16 +24,29 @@ const Leaderboard = () => {
         const q = query(usersRef, orderBy("xp", "desc"), limit(50));
         const querySnapshot = await getDocs(q);
         
+        // Tier name mapping for old -> new names
+        const tierNameMap = {
+          'The Thrill Seeker': 'The Spark',
+          'The Grinder': 'The Guardian',
+          'The Prodigy': 'The Navigator',
+          'The HENRY (High Earner, Not Rich Yet)': 'The Climber',
+          'The Safety Netter': 'The Conservator',
+          'The Architect': 'The Visionary'
+        };
+        
         const realUsers = [];
         querySnapshot.forEach((doc) => {
           const data = doc.data();
           // Only push users who actually have a profile set up
           if (data.profile && data.profile.name) {
+            const oldTitle = data.archetype?.title || 'Beginner';
+            const mappedTitle = tierNameMap[oldTitle] || oldTitle;
+            
             realUsers.push({
               id: doc.id,
               name: data.profile.name,
               status: data.profile.status,
-              archetype: data.archetype?.title || 'Beginner',
+              archetype: mappedTitle,
               xp: data.xp || 0
             });
           }

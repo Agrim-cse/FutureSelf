@@ -10,7 +10,9 @@ const AuthPage = () => {
   const [isLogin, setIsLogin] = useState(false);
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
+  const [confirmPassword, setConfirmPassword] = useState('');
   const [showPassword, setShowPassword] = useState(false); // New state for eye toggle
+  const [showConfirmPassword, setShowConfirmPassword] = useState(false); // For confirm password toggle
   const [error, setError] = useState('');
   const [loading, setLoading] = useState(false);
 
@@ -37,6 +39,17 @@ const AuthPage = () => {
           navigate('/onboarding'); 
         }
       } else {
+        // Validate password match on signup
+        if (password !== confirmPassword) {
+          setError('Passwords do not match. Please try again.');
+          setLoading(false);
+          return;
+        }
+        if (password.length < 6) {
+          setError('Password must be at least 6 characters long.');
+          setLoading(false);
+          return;
+        }
         await createUserWithEmailAndPassword(auth, email, password);
         navigate('/onboarding');
       }
@@ -91,6 +104,24 @@ const AuthPage = () => {
                 {showPassword ? '👁️' : '🙈'}
               </button>
             </div>
+
+            {!isLogin && (
+              <div style={{ position: 'relative', display: 'flex', alignItems: 'center' }}>
+                <input 
+                  type={showConfirmPassword ? "text" : "password"} 
+                  placeholder="Confirm Password" required={!isLogin}
+                  value={confirmPassword} onChange={(e) => setConfirmPassword(e.target.value)}
+                  style={{ width: '100%', padding: '1rem', paddingRight: '3rem', borderRadius: '0.5rem', backgroundColor: '#030712', border: '1px solid #374151', color: '#fff', outline: 'none' }} 
+                />
+                <button 
+                  type="button"
+                  onClick={() => setShowConfirmPassword(!showConfirmPassword)}
+                  style={{ position: 'absolute', right: '1rem', background: 'none', border: 'none', color: '#9ca3af', cursor: 'pointer', fontSize: '1.2rem' }}
+                >
+                  {showConfirmPassword ? '👁️' : '🙈'}
+                </button>
+              </div>
+            )}
 
             <button type="submit" disabled={loading} style={{ padding: '1rem', backgroundColor: '#8b5cf6', color: '#fff', border: 'none', borderRadius: '0.5rem', fontWeight: 'bold', cursor: loading ? 'not-allowed' : 'pointer', marginTop: '0.5rem', transition: '0.2s' }}>
               {loading ? 'Processing...' : (isLogin ? 'Access Dashboard' : 'Initialize Account')}
