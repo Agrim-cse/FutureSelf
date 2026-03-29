@@ -17,12 +17,14 @@ const ProDashboard = () => {
 
   const [activeTab, setActiveTab] = useState('actions');
   const [xp, setXp] = useState(0); 
-  const [timeFilter, setTimeFilter] = useState('12months'); 
+  const [timeFilter, setTimeFilter] = useState('12months');
+  const [ledgerFilter, setLedgerFilter] = useState('daily');
 
   const [amount, setAmount] = useState('');
   const [category, setCategory] = useState('housing'); 
   const [assetClass, setAssetClass] = useState('equity'); 
   const [expenses, setExpenses] = useState({ housing: 0, food: 0, lifestyle: 0, health: 0 });
+  const [ledger, setLedger] = useState([]);
   
   // Initializing with realistic values from Onboarding instead of hardcoded 15L
   const [portfolio, setPortfolio] = useState({ equity: 0, debt: 0, gold: 0 }); 
@@ -34,6 +36,13 @@ const ProDashboard = () => {
   const [crisisAlert, setCrisisAlert] = useState(null);
 
   const [whatIfExtra, setWhatIfExtra] = useState(0);
+
+  // --- CONFIRMATION POPUP STATE ---
+  const [showConfirm, setShowConfirm] = useState(false);
+  const [pendingTransaction, setPendingTransaction] = useState(null);
+
+  // --- STREAK TOOLTIP STATE ---
+  const [showStreakTooltip, setShowStreakTooltip] = useState(false);
 
   // 1. DATA INITIALIZATION HOOK
   useEffect(() => {
@@ -49,11 +58,73 @@ const ProDashboard = () => {
       if (savedDb) {
         setExpenses(savedDb.expenses || { housing: 0, food: 0, lifestyle: 0, health: 0 });
         setPortfolio(savedDb.portfolio || { equity: 0, debt: 0, gold: 0 });
+        setLedger(savedDb.ledger || []);
         setLiabilities(savedDb.liabilities || []);
+
+        // --- STREAK SYSTEM: Pro 50-30-20 Rule (Weekly) ---
+        const today = new Date();
+        const weekStart = new Date(today);
+        weekStart.setDate(today.getDate() - today.getDay()); // Start of week (Sunday)
+        const weekStartStr = weekStart.toDateString();
+        const lastStreakDate = data.lastStreakDate || weekStartStr;
+        
+        // Only calculate streak once per week (when week changes)
+        if (lastStreakDate !== weekStartStr) {
+          const entries = savedDb.ledger || [];
+          
+          // Filter for current week
+          let weeklyNeeds = 0;
+          let weeklyWants = 0;
+          let weeklySavings = 0;
+          
+          entries.forEach(entry => {
+            const entryDate = new Date(entry.date);
+            if (entryDate >= weekStart && entryDate <= today) {
+              if (['housing', 'food'].includes(entry.category)) {
+                weeklyNeeds += entry.amount;
+              } else if (['lifestyle', 'health'].includes(entry.category)) {
+                weeklyWants += entry.amount;
+              } else if (entry.category === 'invest') {
+                weeklySavings += entry.amount;
+              }
+            }
+          });
+          
+          const weeklyTotal = weeklyNeeds + weeklyWants + weeklySavings;
+          let followsRule = false;
+          
+          if (weeklyTotal > 0) {
+            const needsRatio = weeklyNeeds / weeklyTotal;
+            const wantsRatio = weeklyWants / weeklyTotal;
+            const savingsRatio = weeklySavings / weeklyTotal;
+            
+            // Check if within tolerance (±5%) of 50-30-20
+            followsRule = 
+              Math.abs(needsRatio - 0.5) <= 0.05 &&
+              Math.abs(wantsRatio - 0.3) <= 0.05 &&
+              Math.abs(savingsRatio - 0.2) <= 0.05;
+          }
+          
+          const newStreak = followsRule ? (data.streak || 1) + 1 : 1;
+          const updatedData = { ...data, streak: newStreak, lastStreakDate: weekStartStr };
+          localStorage.setItem('finquest_user', JSON.stringify(updatedData));
+          setUserData(updatedData);
+        }
       } else if (data.dashboardData) {
         // Fallback to the initial realistic state created during Onboarding
         setPortfolio(data.dashboardData.portfolio);
         setExpenses(data.dashboardData.expenses);
+        setLedger(data.dashboardData.ledger || []);
+
+        // --- STREAK SYSTEM: First time check ---
+        const today = new Date().toDateString();
+        const lastStreakDate = data.lastStreakDate || today;
+        if (lastStreakDate !== today) {
+          const newStreak = 1;
+          const updatedData = { ...data, streak: newStreak, lastStreakDate: today };
+          localStorage.setItem('finquest_user', JSON.stringify(updatedData));
+          setUserData(updatedData);
+        }
       }
     }
     // eslint-disable-next-line
@@ -64,20 +135,22 @@ const ProDashboard = () => {
     const syncToCloud = async () => {
       const user = auth.currentUser;
       if (user && userData) {
-        const dbState = { expenses, portfolio, liabilities };
+        const dbState = { expenses, portfolio, liabilities, ledger };
         
         // Update Local Storage for speed
         localStorage.setItem(`db_${userData.profile.name}`, JSON.stringify(dbState));
         
-        // Silent Cloud Backup
+        // Silent Cloud Backup - include streak & date for daily refresh logic
         await setDoc(doc(db, "users", user.uid), {
           dashboardData: dbState,
+          streak: userData.streak || 1,
+          lastStreakDate: userData.lastStreakDate || new Date().toDateString(),
           lastUpdated: new Date().toISOString()
         }, { merge: true }).catch(err => console.error("Cloud Sync Error:", err));
       }
     };
     syncToCloud();
-  }, [expenses, portfolio, liabilities, userData]);
+  }, [expenses, portfolio, liabilities, ledger, userData]);
 
   if (!userData) return <div className="dash-container">Loading Pro Engine...</div>;
 
@@ -88,15 +161,8 @@ const ProDashboard = () => {
 
   const totalSpentNeeds = expenses.housing + expenses.food + expenses.health + totalEmi;
   const totalSpentWants = expenses.lifestyle;
-  const idealNeeds = income * 0.50;
-  const idealWants = income * 0.30;
-
-  const getRealityCheck = () => {
-    if (totalSpentNeeds > idealNeeds) return { text: "Bro, your 'Survival' spending is through the roof. Are you eating gold for breakfast? Cut back.", color: '#ef4444' };
-    if (totalSpentWants > idealWants) return { text: "Lifestyle creep alert! You are spending too much on Wants. Your future self is judging you.", color: '#fbbf24' };
-    return { text: "Optimizer mode engaged. Your allocations are flawless. Keep stacking that paper.", color: '#10b981' };
-  };
-  const realityCheck = getRealityCheck();
+  //const idealNeeds = income * 0.50;
+  //const idealWants = income * 0.30;
 
   const calculatePayoffMonths = (P, E, r_annual) => {
     const r = (r_annual / 100) / 12;
@@ -109,17 +175,53 @@ const ProDashboard = () => {
     const val = Number(amount);
     if (val <= 0) return;
 
-    if (['housing', 'food', 'lifestyle', 'health'].includes(category)) {
-      setExpenses(prev => ({ ...prev, [category]: prev[category] + val }));
-    } else if (category === 'invest') {
-      setPortfolio(prev => ({ ...prev, [assetClass]: prev[assetClass] + val }));
+    setPendingTransaction({ amount: val, category, assetClass });
+    setShowConfirm(true);
+  };
+
+  const confirmTransaction = () => {
+    if (!pendingTransaction) return;
+
+    const entry = {
+      id: Date.now(),
+      category: pendingTransaction.category,
+      assetClass: pendingTransaction.assetClass,
+      amount: pendingTransaction.amount,
+      date: new Date().toLocaleDateString(),
+      timestamp: new Date().toISOString()
+    };
+
+    if (['housing', 'food', 'lifestyle', 'health'].includes(pendingTransaction.category)) {
+      setExpenses(prev => ({ ...prev, [pendingTransaction.category]: prev[pendingTransaction.category] + pendingTransaction.amount }));
+    } else if (pendingTransaction.category === 'invest') {
+      setPortfolio(prev => ({ ...prev, [pendingTransaction.assetClass]: prev[pendingTransaction.assetClass] + pendingTransaction.amount }));
       const newXp = xp + 150;
       setXp(newXp);
       const updatedData = { ...userData, xp: newXp };
       localStorage.setItem('finquest_user', JSON.stringify(updatedData));
       setUserData(updatedData);
     }
+
+    setLedger([...ledger, entry]);
     setAmount('');
+    setPendingTransaction(null);
+    setShowConfirm(false);
+  };
+
+  const getFilteredLedger = () => {
+    const now = new Date();
+    return ledger.filter(entry => {
+      const entryDate = new Date(entry.date);
+      if (ledgerFilter === 'daily') {
+        return entryDate.toDateString() === now.toDateString();
+      } else if (ledgerFilter === 'weekly') {
+        const weekAgo = new Date(now.getTime() - 7 * 24 * 60 * 60 * 1000);
+        return entryDate >= weekAgo && entryDate <= now;
+      } else if (ledgerFilter === 'monthly') {
+        return entryDate.getMonth() === now.getMonth() && entryDate.getFullYear() === now.getFullYear();
+      }
+      return true;
+    }).sort((a, b) => new Date(b.timestamp) - new Date(a.timestamp));
   };
 
   const handleAddLiability = (e) => {
@@ -148,20 +250,19 @@ const ProDashboard = () => {
     let labels = []; let spentData = []; let investData = [];
     let count = timeFilter === '7days' ? 7 : (timeFilter === '12weeks' ? 12 : (timeFilter === '12months' ? 12 : 5));
     let prefix = timeFilter === '7days' ? 'Day' : (timeFilter === '12weeks' ? 'Wk' : (timeFilter === '12months' ? 'Mo' : 'Yr'));
-    let divider = timeFilter === '7days' ? 30 : (timeFilter === '12weeks' ? 4 : (timeFilter === '12months' ? 1 : 1/12));
 
-    const periodIncome = income / divider;
     const currentSpentTotal = totalSpentNeeds + totalSpentWants;
 
     for(let i=1; i<=count; i++) {
       labels.push(`${prefix} ${i}`);
       if (i === count) {
+        // Only show REAL current period data
         spentData.push(currentSpentTotal);
-        investData.push(periodIncome * 0.2); 
+        investData.push(0);
       } else {
-        let mockSpend = periodIncome * (0.5 + Math.random() * 0.3);
-        spentData.push(mockSpend);
-        investData.push(periodIncome - mockSpend);
+        // No historical data available - show zeros
+        spentData.push(0);
+        investData.push(0);
       }
     }
     return { labels, datasets: [{ label: 'Outflow (Spent + Debt)', data: spentData, backgroundColor: '#ef4444', borderRadius: 4 }, { label: 'Capital Deployed', data: investData, backgroundColor: '#8b5cf6', borderRadius: 4 }] };
@@ -203,7 +304,7 @@ const ProDashboard = () => {
 
   const dnutData = {
     labels: ['Equity', 'Debt', 'Gold'],
-    datasets: [{ data: [Math.max(1, portfolio.equity), Math.max(1, portfolio.debt), Math.max(1, portfolio.gold)], backgroundColor: ['#8b5cf6', '#3b82f6', '#fbbf24'], borderWidth: 0 }]
+    datasets: [{ data: [portfolio.equity || 0, portfolio.debt || 0, portfolio.gold || 0], backgroundColor: ['#8b5cf6', '#3b82f6', '#fbbf24'], borderWidth: 0 }]
   };
 
   return (
@@ -223,11 +324,40 @@ const ProDashboard = () => {
             <button onClick={() => setActiveTab('visualizer')} style={{ padding: '0.5rem 1.5rem', borderRadius: '0.5rem', fontWeight: 'bold', border: 'none', cursor: 'pointer', backgroundColor: activeTab === 'visualizer' ? '#8b5cf6' : 'transparent', color: activeTab === 'visualizer' ? '#fff' : '#9ca3af' }}>
               Data Visualizer
             </button>
+            <button onClick={() => setActiveTab('ledger')} style={{ padding: '0.5rem 1.5rem', borderRadius: '0.5rem', fontWeight: 'bold', border: 'none', cursor: 'pointer', backgroundColor: activeTab === 'ledger' ? '#8b5cf6' : 'transparent', color: activeTab === 'ledger' ? '#fff' : '#9ca3af' }}>
+              Ledger
+            </button>
           </div>
 
           <div style={{ textAlign: 'right' }}>
             <div style={{ fontSize: '0.85rem', color: '#9ca3af', marginBottom: '4px' }}>Rank: {archetype.title}</div>
-            <span style={{ fontWeight: 'bold', color: '#8b5cf6' }}>🔥 3 | {xp} XP</span>
+            <div 
+              style={{ fontWeight: 'bold', color: '#8b5cf6', cursor: 'pointer', position: 'relative', display: 'inline-block' }}
+              onMouseEnter={() => setShowStreakTooltip(true)}
+              onMouseLeave={() => setShowStreakTooltip(false)}
+            >
+              🔥 {userData?.streak || 0} | {xp} XP
+              {showStreakTooltip && (
+                <div style={{
+                  position: 'absolute', top: '100%', right: 0, marginTop: '0.5rem',
+                  backgroundColor: 'rgba(139, 92, 246, 1)', border: '1px solid #8b5cf6', borderRadius: '0.5rem',
+                  padding: '1rem', width: '300px', zIndex: 999,
+                  boxShadow: '0 10px 25px rgba(0, 0, 0, 0.5)',
+                  color: '#d1d5db', fontSize: '0.85rem', lineHeight: '1.6', textAlign: 'left'
+                }}>
+                  <p style={{ fontWeight: 'bold', color: '#fff', marginBottom: '0.75rem', fontSize: '0.95rem' }}>Streak Calculation</p>
+                  <div style={{ backgroundColor: 'rgba(0, 0, 0, 0.2)', padding: '0.75rem', borderRadius: '0.375rem', marginBottom: '0' }}>
+                    <p style={{ color: '#fff', marginBottom: '0.5rem', margin: '0 0 0.5rem 0' }}><strong>Every Sunday:</strong></p>
+                    <ol style={{ marginLeft: '1.5rem', color: '#d1d5db', paddingLeft: '0', textAlign: 'left' }}>
+                      <li style={{ marginBottom: '0.375rem' }}>Sum all transactions from Sunday → Today</li>
+                      <li style={{ marginBottom: '0.375rem' }}>Calculate spending in each category</li>
+                      <li style={{ marginBottom: '0.375rem' }}>Check if ratios match 50-30-20 (±5%)</li>
+                      <li>Streak +1 if compliant, reset to 1 if not</li>
+                    </ol>
+                  </div>
+                </div>
+              )}
+            </div>
           </div>
         </header>
 
@@ -235,11 +365,6 @@ const ProDashboard = () => {
           {activeTab === 'actions' && (
             <>
               <div className="dash-col" style={{ animation: 'fadeIn 0.3s' }}>
-                <div style={{ backgroundColor: 'rgba(17, 24, 39, 0.8)', padding: '1rem', borderRadius: '0.75rem', border: `1px solid ${realityCheck.color}`, borderLeft: `5px solid ${realityCheck.color}`, marginBottom: '1rem' }}>
-                  <span style={{ fontWeight: 'bold', color: realityCheck.color, fontSize: '0.85rem', textTransform: 'uppercase' }}>AI Coach Reality Check:</span>
-                  <p style={{ color: '#d1d5db', fontSize: '0.95rem', marginTop: '0.25rem' }}>{realityCheck.text}</p>
-                </div>
-
                 <div style={{ backgroundColor: '#111827', padding: '1.5rem', borderRadius: '1rem', border: '1px solid #374151' }}>
                   <h3 style={{ fontSize: '1.25rem', fontWeight: 'bold', marginBottom: '1.5rem' }}>Log Activity</h3>
                   <form onSubmit={handleLogTransaction} style={{ display: 'flex', flexDirection: 'column', gap: '1rem' }}>
@@ -322,7 +447,13 @@ const ProDashboard = () => {
                       <option value="5years">Past 5 Years</option>
                     </select>
                   </div>
-                  <div style={{ height: '350px' }}><Bar data={getHistoricalData()} options={{ responsive: true, maintainAspectRatio: false }} /></div>
+                  {totalSpentNeeds === 0 && totalSpentWants === 0 ? (
+                    <div style={{ height: '350px', display: 'flex', alignItems: 'center', justifyContent: 'center', color: '#9ca3af', fontSize: '0.95rem' }}>
+                      📊 No transaction history yet. Start logging cash flow to see patterns emerge!
+                    </div>
+                  ) : (
+                    <div style={{ height: '350px' }}><Bar data={getHistoricalData()} options={{ responsive: true, maintainAspectRatio: false }} /></div>
+                  )}
                 </div>
               </div>
 
@@ -358,7 +489,65 @@ const ProDashboard = () => {
               </div>
             </>
           )}
+
+          {activeTab === 'ledger' && (
+            <>
+              <div className="dash-col" style={{ gridColumn: 'span 2', animation: 'fadeIn 0.3s' }}>
+                <div style={{ backgroundColor: '#111827', padding: '1.5rem', borderRadius: '1rem', border: '1px solid #374151' }}>
+                  <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '1.5rem' }}>
+                    <h3 style={{ fontSize: '1.5rem', fontWeight: 'bold' }}>Transaction Ledger</h3>
+                    <div style={{ display: 'flex', gap: '0.5rem' }}>
+                      <button onClick={() => setLedgerFilter('daily')} style={{ padding: '0.5rem 1rem', borderRadius: '0.5rem', border: 'none', cursor: 'pointer', backgroundColor: ledgerFilter === 'daily' ? '#8b5cf6' : '#374151', color: '#fff', fontWeight: 'bold', fontSize: '0.9rem' }}>📅 Daily</button>
+                      <button onClick={() => setLedgerFilter('weekly')} style={{ padding: '0.5rem 1rem', borderRadius: '0.5rem', border: 'none', cursor: 'pointer', backgroundColor: ledgerFilter === 'weekly' ? '#8b5cf6' : '#374151', color: '#fff', fontWeight: 'bold', fontSize: '0.9rem' }}>📆 Weekly</button>
+                      <button onClick={() => setLedgerFilter('monthly')} style={{ padding: '0.5rem 1rem', borderRadius: '0.5rem', border: 'none', cursor: 'pointer', backgroundColor: ledgerFilter === 'monthly' ? '#8b5cf6' : '#374151', color: '#fff', fontWeight: 'bold', fontSize: '0.9rem' }}>📊 Monthly</button>
+                    </div>
+                  </div>
+                  <div style={{ display: 'flex', flexDirection: 'column', gap: '0.75rem', maxHeight: '400px', overflowY: 'auto' }}>
+                    {getFilteredLedger().length === 0 ? (
+                      <p style={{ color: '#9ca3af', textAlign: 'center', padding: '2rem' }}>No transactions recorded for this period.</p>
+                    ) : (
+                      getFilteredLedger().map(entry => (
+                        <div key={entry.id} style={{ backgroundColor: '#1f2937', padding: '1rem', borderRadius: '0.5rem', border: '1px solid #374151', display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+                          <div>
+                            <p style={{ fontWeight: 'bold', color: '#f3f4f6', marginBottom: '0.25rem' }}>{entry.category === 'invest' ? `Invest - ${entry.assetClass}` : `Expense - ${entry.category}`}</p>
+                            <p style={{ fontSize: '0.85rem', color: '#9ca3af' }}>{entry.date} at {entry.timestamp.split('T')[1].split(':')[0]}:{entry.timestamp.split('T')[1].split(':')[1]}</p>
+                          </div>
+                          <p style={{ fontWeight: 'bold', color: '#8b5cf6', fontSize: '1.1rem' }}>₹{entry.amount.toLocaleString()}</p>
+                        </div>
+                      ))
+                    )}
+                  </div>
+                </div>
+              </div>
+            </>
+          )}
         </main>
+
+        {showConfirm && pendingTransaction && (
+          <div style={{
+            position: 'fixed', top: 0, left: 0, right: 0, bottom: 0,
+            backgroundColor: 'rgba(0, 0, 0, 0.7)', display: 'flex', alignItems: 'center', justifyContent: 'center', zIndex: 1000
+          }}>
+            <div style={{
+              backgroundColor: '#111827', border: '1px solid #374151', borderRadius: '1rem', padding: '2rem',
+              maxWidth: '400px', width: '90%'
+            }}>
+              <h3 style={{ fontSize: '1.25rem', fontWeight: 'bold', marginBottom: '1rem' }}>Confirm Transaction</h3>
+              <p style={{ color: '#9ca3af', marginBottom: '1.5rem' }}>
+                Add <strong style={{ color: '#fff' }}>₹{pendingTransaction?.amount?.toLocaleString()}</strong> to{' '}
+                <strong style={{ color: '#8b5cf6', textTransform: 'capitalize' }}>{pendingTransaction?.category === 'invest' ? `${pendingTransaction.assetClass}` : pendingTransaction?.category}</strong>?
+              </p>
+              <div style={{ display: 'flex', gap: '1rem' }}>
+                <button onClick={() => { setShowConfirm(false); setPendingTransaction(null); }} style={{ flex: 1, padding: '0.75rem', backgroundColor: '#374151', color: '#fff', border: 'none', borderRadius: '0.5rem', cursor: 'pointer', fontWeight: 'bold' }}>
+                  Cancel
+                </button>
+                <button onClick={confirmTransaction} style={{ flex: 1, padding: '0.75rem', backgroundColor: '#8b5cf6', color: '#fff', border: 'none', borderRadius: '0.5rem', cursor: 'pointer', fontWeight: 'bold' }}>
+                  Confirm
+                </button>
+              </div>
+            </div>
+          </div>
+        )}
       </div>
     </>
   );

@@ -60,6 +60,13 @@ const Navbar = () => {
         >
           Quests & XP
         </span>
+        <span 
+          className={`nav-link ${location.pathname === '/leaderboard' ? `active ${activeClass}` : ''}`}
+          onClick={() => navigate('/leaderboard')}
+          style={{ cursor: 'pointer' }}
+        >
+          Leaderboard
+        </span>
       </div>
 
       {/* User Actions */}

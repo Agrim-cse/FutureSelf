@@ -19,11 +19,17 @@ const StudentDashboard = () => {
   const [activeTab, setActiveTab] = useState('actions');
   const [xp, setXp] = useState(0); 
   const [timeFilter, setTimeFilter] = useState('7days'); 
+  const [ledgerFilter, setLedgerFilter] = useState('daily');
 
   // --- LOGGING STATE ---
   const [amount, setAmount] = useState('');
-  const [category, setCategory] = useState('essentials'); 
+  const [category, setCategory] = useState('essentials');
+  const [ledger, setLedger] = useState([]);
   const [currentPeriodData, setCurrentPeriodData] = useState({ essentials: 0, lifestyle: 0, academic: 0, save: 0 });
+
+  // --- CONFIRMATION POPUP STATE ---
+  const [showConfirm, setShowConfirm] = useState(false);
+  const [pendingTransaction, setPendingTransaction] = useState(null);
 
   // --- MULTIPLE FORECAST LOANS MODULE ---
   const [loans, setLoans] = useState([]);
@@ -33,6 +39,9 @@ const StudentDashboard = () => {
   const [crisisAmount, setCrisisAmount] = useState('');
   const [totalCrisisApplied, setTotalCrisisApplied] = useState(0);
   const [crisisAlert, setCrisisAlert] = useState(null);
+
+  // --- STREAK TOOLTIP STATE ---
+  const [showStreakTooltip, setShowStreakTooltip] = useState(false);
 
   // 1. DATA INITIALIZATION HOOK
   useEffect(() => {
@@ -48,11 +57,71 @@ const StudentDashboard = () => {
       if (savedDb) {
         setCurrentPeriodData(savedDb.currentPeriodData || { essentials: 0, lifestyle: 0, academic: 0, save: 0 });
         setLoans(savedDb.loans || []);
+        setLedger(savedDb.ledger || []);
         setTotalCrisisApplied(savedDb.totalCrisisApplied || 0);
+
+        // --- STREAK SYSTEM: Student 50-30-20 Rule (Weekly) ---
+        const today = new Date();
+        const weekStart = new Date(today);
+        weekStart.setDate(today.getDate() - today.getDay()); // Start of week (Sunday)
+        const weekStartStr = weekStart.toDateString();
+        const lastStreakDate = data.lastStreakDate || weekStartStr;
+        
+        // Only calculate streak once per week (when week changes)
+        if (lastStreakDate !== weekStartStr) {
+          const entries = savedDb.ledger || [];
+          
+          // Filter for current week
+          let weeklyEssentials = 0;
+          let weeklyAcademic = 0;
+          let weeklyLifestyle = 0;
+          let weeklySave = 0;
+          
+          entries.forEach(entry => {
+            const entryDate = new Date(entry.date);
+            if (entryDate >= weekStart && entryDate <= today) {
+              if (entry.category === 'essentials') weeklyEssentials += entry.amount;
+              if (entry.category === 'academic') weeklyAcademic += entry.amount;
+              if (entry.category === 'lifestyle') weeklyLifestyle += entry.amount;
+              if (entry.category === 'save') weeklySave += entry.amount;
+            }
+          });
+          
+          const weeklyTotal = weeklyEssentials + weeklyAcademic + weeklyLifestyle + weeklySave;
+          
+          let followsRule = false;
+          if (weeklyTotal > 0) {
+            const essentialsRatio = (weeklyEssentials + weeklyAcademic) / weeklyTotal;
+            const lifestyleRatio = weeklyLifestyle / weeklyTotal;
+            const saveRatio = weeklySave / weeklyTotal;
+            
+            // Check if within tolerance (±5%) of 50-30-20
+            followsRule = 
+              Math.abs(essentialsRatio - 0.5) <= 0.05 &&
+              Math.abs(lifestyleRatio - 0.3) <= 0.05 &&
+              Math.abs(saveRatio - 0.2) <= 0.05;
+          }
+          
+          const newStreak = followsRule ? (data.streak || 1) + 1 : 1;
+          const updatedData = { ...data, streak: newStreak, lastStreakDate: weekStartStr };
+          localStorage.setItem('finquest_user', JSON.stringify(updatedData));
+          setUserData(updatedData);
+        }
       } else if (data.dashboardData) {
         // Fallback to Firestore initial state
         setCurrentPeriodData(data.dashboardData.currentPeriodData);
         setLoans(data.dashboardData.loans || []);
+        setLedger(data.dashboardData.ledger || []);
+
+        // --- STREAK SYSTEM: First time check ---
+        const today = new Date().toDateString();
+        const lastStreakDate = data.lastStreakDate || today;
+        if (lastStreakDate !== today) {
+          const newStreak = 1;
+          const updatedData = { ...data, streak: newStreak, lastStreakDate: today };
+          localStorage.setItem('finquest_user', JSON.stringify(updatedData));
+          setUserData(updatedData);
+        }
       }
     }
     // eslint-disable-next-line
@@ -63,20 +132,22 @@ const StudentDashboard = () => {
     const syncToCloud = async () => {
       const user = auth.currentUser;
       if (user && userData) {
-        const dbState = { currentPeriodData, loans, totalCrisisApplied };
+        const dbState = { currentPeriodData, loans, ledger, totalCrisisApplied };
         
         // Sync to LocalStorage for speed
         localStorage.setItem(`db_student_${userData.profile.name}`, JSON.stringify(dbState));
         
-        // Sync to Cloud Firestore
+        // Sync to Cloud Firestore - include streak & date for daily refresh logic
         await setDoc(doc(db, "users", user.uid), {
           dashboardData: dbState,
+          streak: userData.streak || 1,
+          lastStreakDate: userData.lastStreakDate || new Date().toDateString(),
           lastUpdated: new Date().toISOString()
         }, { merge: true }).catch(err => console.error("Cloud Sync Error:", err));
       }
     };
     syncToCloud();
-  }, [currentPeriodData, loans, totalCrisisApplied, userData]);
+  }, [currentPeriodData, loans, ledger, totalCrisisApplied, userData]);
 
   const calculateEMI = (p, r, t) => {
     if (!p || !r || !t) return 0;
@@ -103,16 +174,52 @@ const StudentDashboard = () => {
     const val = Number(amount);
     if (val <= 0) return;
     
-    setCurrentPeriodData(prev => ({ ...prev, [category]: prev[category] + val }));
+    // Store pending transaction and show confirmation
+    setPendingTransaction({ amount: val, category });
+    setShowConfirm(true);
+  };
+
+  const confirmTransaction = () => {
+    if (!pendingTransaction) return;
+
+    const entry = {
+      id: Date.now(),
+      category: pendingTransaction.category,
+      amount: pendingTransaction.amount,
+      date: new Date().toLocaleDateString(),
+      timestamp: new Date().toISOString()
+    };
+
+    setLedger([...ledger, entry]);
+    setCurrentPeriodData(prev => ({ ...prev, [pendingTransaction.category]: prev[pendingTransaction.category] + pendingTransaction.amount }));
     
-    if (category === 'save') {
+    if (pendingTransaction.category === 'save') {
       const newXp = xp + 50;
       setXp(newXp);
       const updatedData = { ...userData, xp: newXp };
       localStorage.setItem('finquest_user', JSON.stringify(updatedData));
       setUserData(updatedData);
     }
+
     setAmount('');
+    setPendingTransaction(null);
+    setShowConfirm(false);
+  };
+
+  const getFilteredLedger = () => {
+    const now = new Date();
+    return ledger.filter(entry => {
+      const entryDate = new Date(entry.date);
+      if (ledgerFilter === 'daily') {
+        return entryDate.toDateString() === now.toDateString();
+      } else if (ledgerFilter === 'weekly') {
+        const weekAgo = new Date(now.getTime() - 7 * 24 * 60 * 60 * 1000);
+        return entryDate >= weekAgo && entryDate <= now;
+      } else if (ledgerFilter === 'monthly') {
+        return entryDate.getMonth() === now.getMonth() && entryDate.getFullYear() === now.getFullYear();
+      }
+      return true;
+    }).sort((a, b) => new Date(b.timestamp) - new Date(a.timestamp));
   };
 
   const handleAddLoan = (e) => {
@@ -137,19 +244,17 @@ const StudentDashboard = () => {
     let labels = []; let spentData = []; let savedData = [];
     let count = timeFilter === '7days' ? 7 : (timeFilter === '12weeks' ? 12 : (timeFilter === '12months' ? 12 : 5));
     let prefix = timeFilter === '7days' ? 'Day' : (timeFilter === '12weeks' ? 'Wk' : (timeFilter === '12months' ? 'Mo' : 'Yr'));
-    let divider = timeFilter === '7days' ? 30 : (timeFilter === '12weeks' ? 4 : (timeFilter === '12months' ? 1 : 1/12));
-
-    const periodIncome = income / divider;
 
     for(let i=1; i<=count; i++) {
       labels.push(`${prefix} ${i}`);
       if (i === count) {
+        // Only show REAL current period data
         spentData.push(currentPeriodData.essentials + currentPeriodData.lifestyle + currentPeriodData.academic);
         savedData.push(currentPeriodData.save);
       } else {
-        let mockSpend = periodIncome * (0.6 + Math.random() * 0.3);
-        spentData.push(mockSpend);
-        savedData.push(periodIncome - mockSpend);
+        // No historical data available - show zeros
+        spentData.push(0);
+        savedData.push(0);
       }
     }
 
@@ -207,11 +312,40 @@ const StudentDashboard = () => {
             <button onClick={() => setActiveTab('visualizer')} style={{ padding: '0.5rem 1.5rem', borderRadius: '0.5rem', fontWeight: 'bold', border: 'none', cursor: 'pointer', backgroundColor: activeTab === 'visualizer' ? '#3b82f6' : 'transparent', color: activeTab === 'visualizer' ? '#fff' : '#9ca3af' }}>
               Data Visualizer
             </button>
+            <button onClick={() => setActiveTab('ledger')} style={{ padding: '0.5rem 1.5rem', borderRadius: '0.5rem', fontWeight: 'bold', border: 'none', cursor: 'pointer', backgroundColor: activeTab === 'ledger' ? '#3b82f6' : 'transparent', color: activeTab === 'ledger' ? '#fff' : '#9ca3af' }}>
+              Ledger
+            </button>
           </div>
 
           <div style={{ textAlign: 'right' }}>
             <div style={{ fontSize: '0.85rem', color: '#9ca3af', marginBottom: '4px' }}>Rank: {archetype.title}</div>
-            <span style={{ fontWeight: 'bold', color: '#3b82f6' }}>{xp} XP</span>
+            <div 
+              style={{ fontWeight: 'bold', color: '#3b82f6', cursor: 'pointer', position: 'relative', display: 'inline-block' }}
+              onMouseEnter={() => setShowStreakTooltip(true)}
+              onMouseLeave={() => setShowStreakTooltip(false)}
+            >
+              🔥 {userData?.streak || 0} | {xp} XP
+              {showStreakTooltip && (
+                <div style={{
+                  position: 'absolute', top: '100%', right: 0, marginTop: '0.5rem',
+                  backgroundColor: 'rgba(59, 130, 246, 1)', border: '1px solid #3b82f6', borderRadius: '0.5rem',
+                  padding: '1rem', width: '300px', zIndex: 999,
+                  boxShadow: '0 10px 25px rgba(0, 0, 0, 0.5)',
+                  color: '#d1d5db', fontSize: '0.85rem', lineHeight: '1.6', textAlign: 'left'
+                }}>
+                  <p style={{ fontWeight: 'bold', color: '#fff', marginBottom: '0.75rem', fontSize: '0.95rem' }}>Streak Calculation</p>
+                  <div style={{ backgroundColor: 'rgba(0, 0, 0, 0.2)', padding: '0.75rem', borderRadius: '0.375rem', marginBottom: '0' }}>
+                    <p style={{ color: '#fff', marginBottom: '0.5rem', margin: '0 0 0.5rem 0' }}><strong>Every Sunday:</strong></p>
+                    <ol style={{ marginLeft: '1.5rem', color: '#d1d5db', paddingLeft: '0', textAlign: 'left' }}>
+                      <li style={{ marginBottom: '0.375rem' }}>Sum all transactions from Sunday → Today</li>
+                      <li style={{ marginBottom: '0.375rem' }}>Calculate spending in each category</li>
+                      <li style={{ marginBottom: '0.375rem' }}>Check if ratios match 50-30-20 (±5%)</li>
+                      <li>Streak +1 if compliant, reset to 1 if not</li>
+                    </ol>
+                  </div>
+                </div>
+              )}
+            </div>
           </div>
         </header>
 
@@ -294,7 +428,13 @@ const StudentDashboard = () => {
                       <option value="5years">Past 5 Years</option>
                     </select>
                   </div>
-                  <div style={{ height: '350px' }}><Bar data={getHistoricalData()} options={{ responsive: true, maintainAspectRatio: false }} /></div>
+                  {currentPeriodData.essentials === 0 && currentPeriodData.lifestyle === 0 && currentPeriodData.academic === 0 && currentPeriodData.save === 0 ? (
+                    <div style={{ height: '350px', display: 'flex', alignItems: 'center', justifyContent: 'center', color: '#9ca3af', fontSize: '0.95rem' }}>
+                      📊 No transaction history yet. Start logging to build your financial story!
+                    </div>
+                  ) : (
+                    <div style={{ height: '350px' }}><Bar data={getHistoricalData()} options={{ responsive: true, maintainAspectRatio: false }} /></div>
+                  )}
                 </div>
               </div>
 
@@ -310,6 +450,72 @@ const StudentDashboard = () => {
             </>
           )}
         </main>
+
+        {/* LEDGER TAB */}
+        {activeTab === 'ledger' && (
+          <main className="dash-main" style={{ display: 'block' }}>
+            <div style={{ backgroundColor: '#111827', padding: '1.5rem', borderRadius: '1rem', border: '1px solid #374151' }}>
+              <h3 style={{ fontSize: '1.25rem', fontWeight: 'bold', marginBottom: '1.5rem' }}>Transaction Ledger</h3>
+              
+              <div style={{ display: 'flex', gap: '0.5rem', marginBottom: '1.5rem' }}>
+                <button onClick={() => setLedgerFilter('daily')} style={{ padding: '0.5rem 1rem', backgroundColor: ledgerFilter === 'daily' ? '#3b82f6' : 'transparent', color: '#fff', border: '1px solid #374151', borderRadius: '0.5rem', cursor: 'pointer', fontWeight: 'bold' }}>
+                  Today
+                </button>
+                <button onClick={() => setLedgerFilter('weekly')} style={{ padding: '0.5rem 1rem', backgroundColor: ledgerFilter === 'weekly' ? '#3b82f6' : 'transparent', color: '#fff', border: '1px solid #374151', borderRadius: '0.5rem', cursor: 'pointer', fontWeight: 'bold' }}>
+                  This Week
+                </button>
+                <button onClick={() => setLedgerFilter('monthly')} style={{ padding: '0.5rem 1rem', backgroundColor: ledgerFilter === 'monthly' ? '#3b82f6' : 'transparent', color: '#fff', border: '1px solid #374151', borderRadius: '0.5rem', cursor: 'pointer', fontWeight: 'bold' }}>
+                  This Month
+                </button>
+              </div>
+
+              {getFilteredLedger().length === 0 ? (
+                <div style={{ color: '#9ca3af', textAlign: 'center', padding: '2rem' }}>
+                  📭 No transactions in this period
+                </div>
+              ) : (
+                <div style={{ display: 'flex', flexDirection: 'column', gap: '0.75rem' }}>
+                  {getFilteredLedger().map((entry) => (
+                    <div key={entry.id} style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', backgroundColor: '#030712', padding: '1rem', borderRadius: '0.5rem', border: '1px solid #1f2937' }}>
+                      <div>
+                        <div style={{ fontWeight: 'bold', color: '#f3f4f6', textTransform: 'capitalize' }}>{entry.category}</div>
+                        <div style={{ color: '#9ca3af', fontSize: '0.85rem' }}>{entry.date}</div>
+                      </div>
+                      <div style={{ fontWeight: 'bold', color: '#10b981' }}>₹{entry.amount.toLocaleString()}</div>
+                    </div>
+                  ))}
+                </div>
+              )}
+            </div>
+          </main>
+        )}
+
+        {/* CONFIRMATION POPUP */}
+        {showConfirm && (
+          <div style={{
+            position: 'fixed', top: 0, left: 0, right: 0, bottom: 0,
+            backgroundColor: 'rgba(0, 0, 0, 0.7)', display: 'flex', alignItems: 'center', justifyContent: 'center', zIndex: 1000
+          }}>
+            <div style={{
+              backgroundColor: '#111827', border: '1px solid #374151', borderRadius: '1rem', padding: '2rem',
+              maxWidth: '400px', width: '90%'
+            }}>
+              <h3 style={{ fontSize: '1.25rem', fontWeight: 'bold', marginBottom: '1rem' }}>Confirm Transaction</h3>
+              <p style={{ color: '#9ca3af', marginBottom: '1.5rem' }}>
+                Add <strong style={{ color: '#fff' }}>₹{pendingTransaction?.amount?.toLocaleString()}</strong> to{' '}
+                <strong style={{ color: '#3b82f6', textTransform: 'capitalize' }}>{pendingTransaction?.category}</strong>?
+              </p>
+              <div style={{ display: 'flex', gap: '1rem' }}>
+                <button onClick={() => { setShowConfirm(false); setPendingTransaction(null); }} style={{ flex: 1, padding: '0.75rem', backgroundColor: '#374151', color: '#fff', border: 'none', borderRadius: '0.5rem', cursor: 'pointer', fontWeight: 'bold' }}>
+                  Cancel
+                </button>
+                <button onClick={confirmTransaction} style={{ flex: 1, padding: '0.75rem', backgroundColor: '#10b981', color: '#030712', border: 'none', borderRadius: '0.5rem', cursor: 'pointer', fontWeight: 'bold' }}>
+                  Confirm
+                </button>
+              </div>
+            </div>
+          </div>
+        )}
       </div>
     </>
   );

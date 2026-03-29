@@ -1,6 +1,9 @@
 import React, { useState, useEffect } from 'react';
 import { useNavigate } from 'react-router-dom';
 import Navbar from './Navbar';
+// --- SURGICAL DATABASE IMPORTS ---
+import { doc, setDoc } from 'firebase/firestore';
+import { db, auth } from '../firebase';
 import './Quests.css';
 
 const Quests = () => {
@@ -21,7 +24,7 @@ const Quests = () => {
   useEffect(() => {
     const data = JSON.parse(localStorage.getItem('finquest_user'));
     if (!data) {
-      navigate('/onboarding');
+      navigate('/auth'); // Updated to /auth for safety
       return;
     }
     
@@ -46,15 +49,42 @@ const Quests = () => {
     setCompletedQuests(updatedData.completedQuests || []);
     setClaimedAchievements(updatedData.claimedAchievements || []);
 
-    // Fetch ledger for verification
+    // Fetch ledger for REAL-TIME verification (No random data)
     const isStudent = data.profile.status === 'non-earning';
     const dbKey = isStudent ? `db_student_${data.profile.name}` : `db_${data.profile.name}`;
     const savedDb = JSON.parse(localStorage.getItem(dbKey));
-    if (savedDb && savedDb.ledger) {
+    
+    if (savedDb && savedDb.ledger && Array.isArray(savedDb.ledger)) {
       const todayStr = new Date().toLocaleDateString();
-      setTodaysLedger(savedDb.ledger.filter(tx => tx.date.startsWith(todayStr)));
+      // Filters only transactions made today - exact date match with toLocaleDateString()
+      setTodaysLedger(savedDb.ledger.filter(tx => {
+        if (!tx || !tx.date) return false;
+        return String(tx.date).includes(todayStr) || String(tx.date).startsWith(todayStr) || String(tx.date) === todayStr;
+      }));
+    } else {
+      setTodaysLedger([]);
     }
   }, [navigate]);
+
+  // --- SURGICAL CLOUD SYNC HOOK ---
+  useEffect(() => {
+    const syncToCloud = async () => {
+      const user = auth.currentUser;
+      if (user && userData) {
+        const questState = {
+          xp: currentXp,
+          streak: streak,
+          completedQuests,
+          claimedAchievements,
+          lastActive: new Date().toDateString()
+        };
+        // Sync to Firebase
+        await setDoc(doc(db, "users", user.uid), questState, { merge: true })
+          .catch(err => console.error("Quest Sync Error:", err));
+      }
+    };
+    if (userData) syncToCloud();
+  }, [currentXp, completedQuests, claimedAchievements, streak, userData]);
 
   if (!userData) return <div className="quest-container">Loading Quest Board...</div>;
 
@@ -294,7 +324,6 @@ const Quests = () => {
               })}
             </div>
 
-            {/* FIXED OVERFLOW COL 3: NEW DAILY INSIGHTS WIDGET */}
             <div className="quest-section" style={{ animation: 'fadeIn 0.55s' }}>
               <h2 className="quest-section-title">📰 Daily Insights</h2>
               <div className="quest-card" style={{ flexDirection: 'column', alignItems: 'stretch', gap: '1.5rem', backgroundColor: 'transparent', border: 'none', padding: '0' }}>

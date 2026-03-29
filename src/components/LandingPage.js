@@ -1,11 +1,14 @@
 import React, { useState, useEffect } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { LayoutDashboard, TrendingUp, ShieldCheck, Gamepad2, Flame, ArrowUp } from 'lucide-react';
+import { collection, query, orderBy, limit, getDocs } from 'firebase/firestore';
+import { db } from '../firebase';
 import './LandingPage.css';
 
 const LandingPage = () => {
   const navigate = useNavigate();
   const [showScrollTop, setShowScrollTop] = useState(false);
+  const [topPlayers, setTopPlayers] = useState([]);
 
   // Smooth scroll to a specific section
   const scrollToSection = (sectionId) => {
@@ -32,6 +35,36 @@ const LandingPage = () => {
 
     window.addEventListener('scroll', handleScroll);
     return () => window.removeEventListener('scroll', handleScroll);
+  }, []);
+
+  // Fetch top 3 players from Firestore
+  useEffect(() => {
+    const fetchTopPlayers = async () => {
+      try {
+        const usersRef = collection(db, 'users');
+        const q = query(usersRef, orderBy('xp', 'desc'), limit(3));
+        const querySnapshot = await getDocs(q);
+        
+        const players = [];
+        querySnapshot.forEach((doc) => {
+          const data = doc.data();
+          if (data.profile && data.profile.name) {
+            players.push({
+              id: doc.id,
+              name: data.profile.name,
+              xp: data.xp || 0,
+              streak: data.streak || 1
+            });
+          }
+        });
+        
+        setTopPlayers(players);
+      } catch (error) {
+        console.error('Error fetching top players:', error);
+      }
+    };
+
+    fetchTopPlayers();
   }, []);
 
   return (
@@ -124,44 +157,30 @@ const LandingPage = () => {
       <section id="leaderboard" className="lp-leaderboard">
         <h2 className="lp-section-title">Global Top Players</h2>
         <div className="lp-lb-card">
-          <div className="lp-lb-header">
-            <span style={{ color: '#9ca3af', fontWeight: '600' }}>Player</span>
-            <span style={{ color: '#9ca3af', fontWeight: '600' }}>Stats</span>
-          </div>
-          
-          <div className="lp-lb-row">
-            <div className="lp-lb-player">
-              <span className="lp-lb-rank top">#1</span>
-              <span>CompoundKing99</span>
+          {topPlayers.length === 0 ? (
+            <div style={{ padding: '2rem', textAlign: 'center', color: '#9ca3af', fontSize: '1rem' }}>
+              🏆 Join FinQuest to compete on the live leaderboard
             </div>
-            <div className="lp-lb-stats">
-              <span className="lp-lb-xp">14,250 XP</span>
-              <span className="lp-lb-streak"><Flame size={16} /> 42</span>
-            </div>
-          </div>
-
-          <div className="lp-lb-row">
-            <div className="lp-lb-player">
-              <span className="lp-lb-rank top">#2</span>
-              <span>AuraFi_God</span>
-            </div>
-            <div className="lp-lb-stats">
-              <span className="lp-lb-xp">13,800 XP</span>
-              <span className="lp-lb-streak"><Flame size={16} /> 38</span>
-            </div>
-          </div>
-
-          <div className="lp-lb-row">
-            <div className="lp-lb-player">
-              <span className="lp-lb-rank top">#3</span>
-              <span>ZenithSpender</span>
-            </div>
-            <div className="lp-lb-stats">
-              <span className="lp-lb-xp">12,100 XP</span>
-              <span className="lp-lb-streak"><Flame size={16} /> 21</span>
-            </div>
-          </div>
-
+          ) : (
+            <>
+              <div className="lp-lb-header">
+                <span style={{ color: '#9ca3af', fontWeight: '600' }}>Player</span>
+                <span style={{ color: '#9ca3af', fontWeight: '600' }}>Stats</span>
+              </div>
+              {topPlayers.map((player, index) => (
+                <div key={player.id} className="lp-lb-row">
+                  <div className="lp-lb-player">
+                    <span className="lp-lb-rank top">#{index + 1}</span>
+                    <span>{player.name}</span>
+                  </div>
+                  <div className="lp-lb-stats">
+                    <span className="lp-lb-xp">{player.xp.toLocaleString()} XP</span>
+                    <span className="lp-lb-streak"><Flame size={16} /> {player.streak}</span>
+                  </div>
+                </div>
+              ))}
+            </>
+          )}
         </div>
       </section>
 
